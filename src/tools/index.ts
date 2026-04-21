@@ -5,9 +5,15 @@ import { tool, type ToolContext } from "@opencode-ai/plugin"
 import { DoodbaIndexDatabase } from "../database"
 import { globToRegex } from "../glob"
 import { getProjectDbPath, readState, type IndexerState } from "../project-state"
+import { findDoodbaRoot } from "../doodba-detector"
+
+function resolveProjectDir(contextDir: string): string {
+  return findDoodbaRoot(contextDir) ?? contextDir
+}
 
 function withDb<T>(projectDir: string, fn: (db: DoodbaIndexDatabase) => T): Promise<T> {
-  const dbPath = getProjectDbPath(projectDir)
+  const resolved = resolveProjectDir(projectDir)
+  const dbPath = getProjectDbPath(resolved)
   const db = new DoodbaIndexDatabase(dbPath)
   try {
     return Promise.resolve(fn(db))
@@ -24,7 +30,8 @@ function formatResponse(status: IndexerState["status"], results: any, message?: 
 }
 
 function checkReady(projectDir: string): { ready: true } | { ready: false; status: IndexerState["status"]; message: string } {
-  const state = readState(projectDir)
+  const resolved = resolveProjectDir(projectDir)
+  const state = readState(resolved)
   if (state.status === "READY") {
     return { ready: true }
   }
@@ -257,7 +264,8 @@ export const doodbaTools = {
               .filter(Boolean)
           : undefined
         const { indexModules } = await import("../indexer")
-        const result = indexModules({ rootPaths, modules, full: args.full, dbPath: getProjectDbPath(context.directory) })
+        const resolved = resolveProjectDir(context.directory)
+        const result = indexModules({ rootPaths, modules, full: args.full, dbPath: getProjectDbPath(resolved) })
         return formatResponse("READY", result, `Index updated: ${result.indexed} files indexed, ${result.skipped} skipped (unchanged), ${result.errors} errors`)
       } catch (e) {
         return formatResponse("FAILED", [], e instanceof Error ? e.message : String(e))
@@ -275,7 +283,8 @@ export const doodbaTools = {
         return formatResponse(notReady.status, {}, notReady.message)
       }
       try {
-        const state = readState(context.directory)
+        const resolved = resolveProjectDir(context.directory)
+        const state = readState(resolved)
         const dbStatus = await withDb(context.directory, (db) => db.indexStatus())
         const status = {
           ...dbStatus,

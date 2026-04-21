@@ -116,31 +116,19 @@ function discoverAgents(agentsDir) {
 }
 
 /**
- * Run full Doodba indexing for a project directory.
- * Fire-and-forget: caller does not await.
+ * Spawn indexer as a child process via Bun.spawn.
+ * Fire-and-forget: does not await completion.
  */
-async function runIndexing(projectDir, doodbaRoot, { getSourcePaths, indexModules, updateState, getProjectDbPath }) {
-  const sourcePaths = getSourcePaths(doodbaRoot)
-  if (sourcePaths.length === 0) {
-    updateState(projectDir, { status: 'FAILED', error: 'No source paths found in odoo/custom/src/' })
-    return
-  }
-  updateState(projectDir, { status: 'INDEXING', startedAt: new Date().toISOString(), error: null })
-  try {
-    const result = indexModules({ rootPaths: sourcePaths, full: true, dbPath: getProjectDbPath(projectDir) })
-    updateState(projectDir, {
-      status: 'READY',
-      completedAt: new Date().toISOString(),
-      indexedFiles: result.indexed,
-      missingDeps: result.missingDeps,
-      error: null,
-    })
-  } catch (err) {
-    updateState(projectDir, {
-      status: 'FAILED',
-      error: err instanceof Error ? err.message : String(err),
-    })
-  }
+function spawnIndexing(projectDir, doodbaRootPath, sourcePaths) {
+  const workerPath = path.resolve(packageRoot, 'src/indexer-worker.ts')
+  Bun.spawn(
+    ['bun', workerPath, projectDir, doodbaRootPath, ...sourcePaths],
+    {
+      stdout: 'pipe',
+      stderr: 'pipe',
+    }
+  )
+  // Fire-and-forget: don't await. State transitions are handled by the worker.
 }
 
 /**
@@ -171,17 +159,19 @@ export const DoodbaDevPlugin = async ({ directory }) => {
     return { tool: doodbaTools }
   }
 
-  // Doodba project detected — trigger auto-indexing
-  const state = readState(directory)
+  // Doodba project detected — trigger auto-indexing with doodbaRoot as anchor
+  const state = readState(doodbaRoot)
   if (state.status === 'INDEXING' && state.startedAt) {
     const started = new Date(state.startedAt).getTime()
     if (Date.now() - started > 30 * 60 * 1000) {
       // Stuck for > 30 min — retry
-      runIndexing(directory, doodbaRoot, { getSourcePaths, indexModules, updateState, getProjectDbPath })
+      const sourcePaths = getSourcePaths(doodbaRoot)
+      spawnIndexing(doodbaRoot, doodbaRoot, sourcePaths)
     }
   } else if (state.status === 'NO_PROJECT' || state.status === 'FAILED') {
     // Fire-and-forget
-    runIndexing(directory, doodbaRoot, { getSourcePaths, indexModules, updateState, getProjectDbPath })
+    const sourcePaths = getSourcePaths(doodbaRoot)
+    spawnIndexing(doodbaRoot, doodbaRoot, sourcePaths)
   }
 
   // Discover commands and agents from package
