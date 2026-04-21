@@ -1,11 +1,27 @@
 import { readFileSync } from "node:fs"
 
+export interface PythonItemReference {
+  filePath: string
+  lineNumber: number
+  referenceType: 'definition' | 'inheritance' | 'many2one' | 'one2many' | 'many2many'
+  context: string | null
+}
+
 export interface PythonItem {
   itemType: string
   name: string
   parentName: string | null
   module: string
   attributes: Record<string, any>
+  references: PythonItemReference[]
+}
+
+function lineNumberAt(src: string, index: number): number {
+  let line = 1
+  for (let i = 0; i < index && i < src.length; i++) {
+    if (src[i] === "\n") line++
+  }
+  return line
 }
 
 const RE_NAME = /_name\s*=\s*['"]([^'"]+)['"]/
@@ -71,11 +87,29 @@ export function parsePythonRegex(filePath: string, module: string): PythonItem[]
 
       try {
         const nameMatch = RE_NAME.exec(classBody)
-        const modelName = nameMatch?.[1] ?? null
         const inheritMatch = RE_INHERIT.exec(classBody)
         const descMatch = RE_DESCRIPTION.exec(classBody)
+        const modelName = nameMatch?.[1] ?? inheritMatch?.[1] ?? null
 
         if (modelName) {
+          const refType = !nameMatch && inheritMatch ? "inheritance" : "definition"
+          const modelRefs: PythonItemReference[] = [
+            {
+              filePath,
+              lineNumber: lineNumberAt(src, currentClass.startIndex),
+              referenceType: refType,
+              context: className,
+            },
+          ]
+          if (nameMatch && inheritMatch && modelName !== inheritMatch[1]) {
+            modelRefs.push({
+              filePath,
+              lineNumber: lineNumberAt(src, currentClass.startIndex),
+              referenceType: "inheritance",
+              context: `${modelName} _inherit ${inheritMatch[1]}`,
+            })
+          }
+
           items.push({
             itemType: "model",
             name: modelName,
@@ -87,9 +121,11 @@ export function parsePythonRegex(filePath: string, module: string): PythonItem[]
               _description: descMatch?.[1] ?? null,
               file_path: filePath,
             },
+            references: modelRefs,
           })
 
           // Fields - search only in this class body
+          const RELATIONAL = ["Many2one", "One2many", "Many2many"]
           let fm: RegExpExecArray | null
           const fieldRe = new RegExp(RE_FIELD.source, "gm")
           try {
@@ -100,6 +136,28 @@ export function parsePythonRegex(filePath: string, module: string): PythonItem[]
               const computeMatch = RE_COMPUTE.exec(fieldCtx)
               const stringMatch = RE_STRING.exec(fieldCtx)
               const requiredMatch = RE_REQUIRED.exec(fieldCtx)
+              const fieldLineNumber = lineNumberAt(src, currentClass.startIndex + fm.index)
+              const fieldRefs: PythonItemReference[] = [
+                {
+                  filePath,
+                  lineNumber: fieldLineNumber,
+                  referenceType: "definition",
+                  context: `${fieldName} = fields.${fieldType}(...)`,
+                },
+              ]
+              if (RELATIONAL.includes(fieldType)) {
+                // Note: only detects positional comodel arg, not comodel_name= kwarg form.
+                // The AST-based parser (python-ast.ts) handles both forms.
+                const comodelMatch = fieldCtx.match(/fields\.\w+\s*\(\s*['"]([^'"]+)['"]/)
+                if (comodelMatch) {
+                  fieldRefs.push({
+                    filePath,
+                    lineNumber: fieldLineNumber,
+                    referenceType: fieldType.toLowerCase(),
+                    context: `${fieldName} → ${comodelMatch[1]}`,
+                  })
+                }
+              }
               items.push({
                 itemType: "field",
                 name: fieldName,
@@ -112,6 +170,7 @@ export function parsePythonRegex(filePath: string, module: string): PythonItem[]
                   required: requiredMatch ? requiredMatch[1] === "True" : false,
                   file_path: filePath,
                 },
+                references: fieldRefs,
               })
             }
           } catch (fieldErr) {
@@ -157,12 +216,21 @@ export function parsePythonRegex(filePath: string, module: string): PythonItem[]
                 attributes.decorators = decorators
               }
 
+              const methodLineNumber = lineNumberAt(src, currentClass.startIndex + mm.index)
               items.push({
                 itemType: "method",
                 name: methodName,
                 parentName: modelName,
                 module,
                 attributes,
+                references: [
+                  {
+                    filePath,
+                    lineNumber: methodLineNumber,
+                    referenceType: "definition",
+                    context: methodName,
+                  },
+                ],
               })
             }
           } catch (methodErr) {
