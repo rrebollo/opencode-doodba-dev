@@ -9,6 +9,7 @@ export interface IndexerState {
   completedAt: string | null
   error: string | null
   indexedFiles: number
+  missingDeps: string[]
 }
 
 export const DEFAULT_STATE: IndexerState = {
@@ -17,6 +18,7 @@ export const DEFAULT_STATE: IndexerState = {
   completedAt: null,
   error: null,
   indexedFiles: 0,
+  missingDeps: [],
 }
 
 function getProjectDir(projectDir: string): string {

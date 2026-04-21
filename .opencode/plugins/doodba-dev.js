@@ -132,6 +132,7 @@ async function runIndexing(projectDir, doodbaRoot, { getSourcePaths, indexModule
       status: 'READY',
       completedAt: new Date().toISOString(),
       indexedFiles: result.indexed,
+      missingDeps: result.missingDeps,
       error: null,
     })
   } catch (err) {

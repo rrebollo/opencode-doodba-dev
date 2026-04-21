@@ -8,7 +8,7 @@ export interface CsvItem {
   attributes: Record<string, any>
 }
 
-export function parseCsvRfc4180(csvContent: string): string[][] {
+function parseCsvRfc4180(csvContent: string): string[][] {
   const rows: string[][] = []
   const lines = csvContent.split("\n")
   let currentField = ""

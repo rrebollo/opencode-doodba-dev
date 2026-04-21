@@ -77,6 +77,22 @@ describe("plugin tool queries", () => {
     }
   })
 
+  it("doodba_search_by_attr boolean false: finds non-required fields", () => {
+    // SQLite's json_extract on JSON boolean `false` returns integer 0.
+    // The searchByAttr implementation converts JS false → 0 before comparison, which is correct.
+    const db = new DoodbaIndexDatabase(fixture.dbPath)
+    try {
+      const results = db.searchByAttr("field", { required: false }, "base")
+      expect(results.length).toBeGreaterThan(0)
+      // email and phone are non-required fields on res.partner
+      expect(results.some((r) => r.name === "email" && r.parentName === "res.partner")).toBe(true)
+      // none of the results should be required
+      expect(results.every((r) => r.attributes.required === false)).toBe(true)
+    } finally {
+      db.close()
+    }
+  })
+
   it("doodba_find_refs returns references", () => {
     const db = new DoodbaIndexDatabase(fixture.dbPath)
     try {

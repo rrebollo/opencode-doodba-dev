@@ -109,21 +109,27 @@ export function findCycles(modules: Map<string, ModuleNode>): CycleDetectionResu
 }
 
 export function resolveDependencyOrder(modules: Map<string, ModuleNode>): ModuleNode[] {
-  // Calculate depth for each module: max depth of its dependencies + 1
+  // Calculate depth for each module: max depth of its dependencies + 1.
+  // An inProgress set guards against infinite recursion from cyclic dependencies.
   const depthMap = new Map<string, number>()
-  
+  const inProgress = new Set<string>()
+
   function calculateDepth(name: string): number {
     if (depthMap.has(name)) return depthMap.get(name)!
-    
+    // Cycle detected — clamp to 0 to break recursion
+    if (inProgress.has(name)) return 0
+
     const node = modules.get(name)
     if (!node) return 0
-    
+
     if (node.depends.length === 0) {
       depthMap.set(name, 0)
       return 0
     }
-    
-    const maxDepOfDeps = Math.max(...node.depends.map(dep => calculateDepth(dep)))
+
+    inProgress.add(name)
+    const maxDepOfDeps = Math.max(...node.depends.map((dep) => calculateDepth(dep)))
+    inProgress.delete(name)
     const depth = maxDepOfDeps + 1
     depthMap.set(name, depth)
     return depth

@@ -44,8 +44,6 @@ Try to detect Odoo installation automatically:
 ```bash
 if [ -n "$ODOO_PATH" ]; then
     DETECTED_PATH="$ODOO_PATH"
-elif [ -d "/home/coder/letzdoo-sh/odoo/custom/src/odoo" ]; then
-    DETECTED_PATH="/home/coder/letzdoo-sh/odoo/custom/src"
 elif [ -d "$HOME/odoo/custom/src/odoo" ]; then
     DETECTED_PATH="$HOME/odoo/custom/src"
 elif [ -d "./odoo/custom/src/odoo" ]; then

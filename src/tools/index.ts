@@ -3,6 +3,7 @@ import { homedir } from "node:os"
 import { join } from "node:path"
 import { tool, type ToolContext } from "@opencode-ai/plugin"
 import { DoodbaIndexDatabase } from "../database"
+import { globToRegex } from "../glob"
 import { getProjectDbPath, readState, type IndexerState } from "../project-state"
 
 function withDb<T>(projectDir: string, fn: (db: DoodbaIndexDatabase) => T): Promise<T> {
@@ -117,7 +118,7 @@ export const doodbaTools = {
       try {
         let modules = await withDb(context.directory, (db) => db.listModules())
         if (args.pattern) {
-          const re = new RegExp(`^${args.pattern.replace(/\*/g, ".*")}$`)
+          const re = globToRegex(args.pattern)
           modules = modules.filter((m) => re.test(m))
         }
         return formatResponse("READY", modules, undefined)
@@ -234,7 +235,6 @@ export const doodbaTools = {
       full: tool.schema.boolean().optional().describe("Full re-index (clear existing data first)"),
     },
     async execute(args, context: ToolContext) {
-      const ready = checkReady(context.directory)
       // doodba_update_index is allowed even when not ready — it forces indexing
       try {
         const rootPaths = args.paths

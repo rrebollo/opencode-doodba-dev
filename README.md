@@ -43,7 +43,7 @@ Nine tools appear in chat immediately after installation:
 
 - **doodba_search_xml_id** — Search for Odoo XML IDs (external IDs) in the index. Use optional `module` filter and `limit` parameters.
 
-- **doodba_update_index** — Re-index Odoo source code. Provide comma-separated root paths containing Odoo modules. Use `modules` parameter to index specific modules only. Use `full` flag for complete re-index (clears existing data first).
+- **doodba_update_index** — Re-index Odoo source code. Provide comma-separated root paths containing Odoo modules. Use `modules` parameter to index specific modules only. Use `full` flag for complete re-index (clears existing data first). Note: `/` and the home directory are blocked for safety.
 
 - **doodba_index_status** — Show current index status including item counts (models, fields, views, etc.) and last indexed timestamp.
 
@@ -85,7 +85,7 @@ Built with TypeScript and Bun.
 
 ```bash
 bun install
-bun run build
+bun test
 ```
 
 ## License

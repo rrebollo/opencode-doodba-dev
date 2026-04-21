@@ -32,6 +32,7 @@ Search for models, fields, views, methods, menuitems, or xml_ids.
 Get complete info about a specific entity.
 - `name` — entity name (e.g., "sale.order")
 - `type` — entity type
+- For `type=method`, the result includes a `decorators` array (e.g., `["api.depends", "api.multi"]`) when decorators are present on the method.
 
 ### doodba_list_modules
 List all indexed modules. Optional `pattern` filter.
@@ -59,7 +60,7 @@ Search for XML IDs (external IDs).
 
 ### doodba_update_index
 Re-index Odoo source code.
-- `paths` — comma-separated root paths
+- `paths` — comma-separated root paths (blocked: `/` and home directory are refused for safety)
 - `modules` — optional comma-separated module names
 - `full` — clear existing data first
 
@@ -74,3 +75,10 @@ Show index statistics (item counts, last indexed).
 4. Use `doodba_search` for finding elements by pattern
 5. Use `doodba_search_by_attr` for filtered searches (e.g., all required Many2one fields)
 6. Keep index fresh — run `doodba_update_index` after code changes
+
+## Indexed Content Notes
+
+- **QWeb/OWL templates** (`<template>` elements in XML) are indexed as `type=view`. Use `doodba_search` with `type=view` to find them.
+- **`<act_window>` declarations** are indexed as `type=record` (not a dedicated action type).
+- **Method decorators** are stored in the `attributes.decorators` array on method entities.
+- **XML IDs** from CSV data files are indexed as `type=xml_id`.

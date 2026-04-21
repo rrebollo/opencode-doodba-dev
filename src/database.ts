@@ -205,6 +205,10 @@ export class DoodbaIndexDatabase {
     for (const [key, value] of Object.entries(filters)) {
       const jsonPath = `$.${key}`
       if (typeof value === "boolean") {
+        // SQLite's json_extract on a JSON boolean (true/false) returns integer 1/0, not
+        // a SQL boolean or string. This matches both TypeScript (JSON.stringify) and Python
+        // (json.dumps) stored data, since both serialize booleans as JSON true/false literals
+        // which SQLite's JSON functions represent as integers.
         sql += " AND json_extract(attributes, ?) = ?"
         const sqliteBool = value ? 1 : 0
         params.push(jsonPath, sqliteBool)
