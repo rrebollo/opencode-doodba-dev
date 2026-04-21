@@ -1,8 +1,9 @@
 import { describe, it, expect, beforeEach, afterEach } from "bun:test"
-import { mkdtempSync, rmSync } from "node:fs"
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { DoodbaIndexDatabase } from "../../src/database"
+import { parsePythonAst } from "../../src/parsers/python-ast"
 
 describe("item_references", () => {
   let tmpDir: string
@@ -59,5 +60,93 @@ describe("item_references", () => {
 
     const refs = db.findRefs("res.partner", "model")
     expect(refs.length).toBe(0)
+  })
+})
+
+describe("parsePythonAst", () => {
+  let tmpDir2: string
+
+  beforeEach(() => {
+    tmpDir2 = mkdtempSync(join(tmpdir(), "doodba-ast-test-"))
+  })
+
+  afterEach(() => {
+    rmSync(tmpDir2, { recursive: true })
+  })
+
+  it("extracts model, fields, and methods with correct line numbers", () => {
+    const pyFile = join(tmpDir2, "test_model.py")
+    writeFileSync(pyFile, `from odoo import models, fields
+
+class SaleOrder(models.Model):
+    _name = "sale.order"
+    _description = "Sales Order"
+
+    name = fields.Char(string="Name", required=True)
+    partner_id = fields.Many2one("res.partner", string="Customer")
+
+    def action_confirm(self):
+        pass
+`)
+    const items = parsePythonAst(pyFile, "sale")
+    const model = items.find((i) => i.itemType === "model")
+    expect(model).toBeDefined()
+    expect(model!.name).toBe("sale.order")
+    expect(model!.references[0].referenceType).toBe("definition")
+    expect(model!.references[0].lineNumber).toBe(3)
+
+    const partnerField = items.find((i) => i.name === "partner_id")
+    expect(partnerField).toBeDefined()
+    expect(partnerField!.references.length).toBe(2)
+    const relRef = partnerField!.references.find((r) => r.referenceType === "many2one")
+    expect(relRef).toBeDefined()
+    expect(relRef!.context).toContain("res.partner")
+
+    const method = items.find((i) => i.itemType === "method" && i.name === "action_confirm")
+    expect(method).toBeDefined()
+    expect(method!.references[0].lineNumber).toBe(10)
+  })
+
+  it("handles _inherit-only extension correctly", () => {
+    const pyFile = join(tmpDir2, "extend.py")
+    writeFileSync(pyFile, `from odoo import models, fields
+
+class ResPartner(models.Model):
+    _inherit = "res.partner"
+
+    firstname = fields.Char(string="First Name")
+`)
+    const items = parsePythonAst(pyFile, "partner_firstname")
+    const model = items.find((i) => i.itemType === "model")
+    expect(model).toBeDefined()
+    expect(model!.name).toBe("res.partner")
+    expect(model!.references[0].referenceType).toBe("inheritance")
+
+    const field = items.find((i) => i.name === "firstname")
+    expect(field).toBeDefined()
+    expect(field!.parentName).toBe("res.partner")
+  })
+
+  it("returns [] for nonexistent file", () => {
+    const items = parsePythonAst("/nonexistent/file.py", "base")
+    expect(Array.isArray(items)).toBe(true)
+    expect(items.length).toBe(0)
+  })
+
+  it("handles comodel_name kwarg form", () => {
+    const pyFile = join(tmpDir2, "kwarg_model.py")
+    writeFileSync(pyFile, `from odoo import models, fields
+
+class MyModel(models.Model):
+    _name = "my.model"
+
+    partner_id = fields.Many2one(comodel_name="res.partner", string="Partner")
+`)
+    const items = parsePythonAst(pyFile, "my_module")
+    const field = items.find((i) => i.name === "partner_id")
+    expect(field).toBeDefined()
+    const comodelRef = field!.references.find((r) => r.referenceType === "many2one")
+    expect(comodelRef).toBeDefined()
+    expect(comodelRef!.context).toContain("res.partner")
   })
 })
