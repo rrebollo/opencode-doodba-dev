@@ -114,6 +114,19 @@ export class DoodbaIndexDatabase {
     return row?.id ?? 0
   }
 
+  upsertReference(
+    itemId: number,
+    filePath: string,
+    lineNumber: number,
+    referenceType: string,
+    context: string | null,
+  ): void {
+    this.db.run(
+      "INSERT INTO item_references (item_id, file_path, line_number, reference_type, context) VALUES (?, ?, ?, ?, ?)",
+      [itemId, filePath, lineNumber, referenceType, context],
+    )
+  }
+
   search(opts: SearchOptions): IndexedItem[] {
     const conditions: string[] = []
     const params: any[] = []
