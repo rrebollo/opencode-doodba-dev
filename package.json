@@ -1,8 +1,11 @@
 {
-  "name": "opencode-odoo-indexer",
+  "name": "opencode-doodba-dev",
   "version": "0.1.0",
   "type": "module",
-  "main": ".opencode/plugins/odoo-indexer.js",
+  "main": ".opencode/plugins/doodba-dev.js",
+  "scripts": {
+    "test": "bun test"
+  },
   "dependencies": {
     "@opencode-ai/plugin": "^1.4.6",
     "fast-xml-parser": "^5.6.0"

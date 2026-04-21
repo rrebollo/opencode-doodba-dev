@@ -1,0 +1,11 @@
+node_modules/
+bun.lock
+.worktrees/
+
+# OpenCode - override user-scope .gitignore by forcing inclusion
+!AGENTS.md
+!.opencode/
+.opencode/node_modules/
+.opencode/package-lock.json
+.opencode/plans/
+docs/superpowers/
