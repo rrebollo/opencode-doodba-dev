@@ -77,6 +77,7 @@ export class DoodbaIndexDatabase {
       "CREATE INDEX IF NOT EXISTS idx_dependency_depth ON indexed_items(dependency_depth)",
       "CREATE INDEX IF NOT EXISTS idx_ref_item_id ON item_references(item_id)",
       "CREATE INDEX IF NOT EXISTS idx_ref_file ON item_references(file_path)",
+      "CREATE UNIQUE INDEX IF NOT EXISTS idx_ref_unique ON item_references(item_id, file_path, line_number, reference_type)",
       "CREATE INDEX IF NOT EXISTS idx_file_path ON file_metadata(file_path)",
     ])
       this.db.run(idx)
@@ -122,7 +123,7 @@ export class DoodbaIndexDatabase {
     context: string | null,
   ): void {
     this.db.run(
-      "INSERT INTO item_references (item_id, file_path, line_number, reference_type, context) VALUES (?, ?, ?, ?, ?)",
+      "INSERT OR IGNORE INTO item_references (item_id, file_path, line_number, reference_type, context) VALUES (?, ?, ?, ?, ?)",
       [itemId, filePath, lineNumber, referenceType, context],
     )
   }

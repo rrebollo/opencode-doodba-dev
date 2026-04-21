@@ -20,6 +20,9 @@ export function parsePythonAst(filePath: string, module: string): PythonItem[] {
       timeout: 10_000,
     })
     if (result.error || result.status !== 0) {
+      if (result.stderr?.trim()) {
+        console.warn(`[python-ast] Python script failed for ${filePath}:`, result.stderr.trim())
+      }
       return []
     }
     const parsed = JSON.parse(result.stdout.trim() || "[]")
