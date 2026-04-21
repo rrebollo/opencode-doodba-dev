@@ -23,6 +23,12 @@ function itemTypeFromModel(model: string): string {
   return "record"
 }
 
+function lineNumberOf(src: string, searchStr: string): number {
+  const idx = src.indexOf(searchStr)
+  if (idx === -1) return 0
+  return src.slice(0, idx).split('\n').length
+}
+
 export function parseXml(filePath: string, module: string): XmlItem[] {
   const items: XmlItem[] = []
   try {
@@ -46,13 +52,19 @@ export function parseXml(filePath: string, module: string): XmlItem[] {
         for (const f of fieldArr) {
           if (f["@_name"]) fields[f["@_name"]] = f["@_ref"] ?? f["#text"] ?? ""
         }
-        items.push({
-          itemType: itemTypeFromModel(model),
-          name: xmlId,
-          parentName: null,
-          module,
-          attributes: { model, ...fields },
-        })
+         items.push({
+           itemType: itemTypeFromModel(model),
+           name: xmlId,
+           parentName: null,
+           module,
+           attributes: { model, ...fields },
+           references: [{
+             filePath,
+             lineNumber: lineNumberOf(src, `id="${id}"`),
+             referenceType: "definition" as const,
+             context: `<record id="${id}" model="${model}">`,
+           }],
+         })
       }
     }
 
@@ -63,17 +75,23 @@ export function parseXml(filePath: string, module: string): XmlItem[] {
         const id = m["@_id"] ?? ""
         if (!id) continue
         const xmlId = qualifyId(id)
-        items.push({
-          itemType: "menuitem",
-          name: xmlId,
-          parentName: m["@_parent"] ?? null,
-          module,
-          attributes: {
-            name: m["@_name"] ?? "",
-            action: m["@_action"] ?? "",
-            groups: m["@_groups"] ?? "",
-          },
-        })
+         items.push({
+           itemType: "menuitem",
+           name: xmlId,
+           parentName: m["@_parent"] ?? null,
+           module,
+           attributes: {
+             name: m["@_name"] ?? "",
+             action: m["@_action"] ?? "",
+             groups: m["@_groups"] ?? "",
+           },
+           references: [{
+             filePath,
+             lineNumber: lineNumberOf(src, `id="${id}"`),
+             referenceType: "definition" as const,
+             context: `<menuitem id="${id}">`,
+           }],
+         })
       }
     }
 
@@ -84,13 +102,19 @@ export function parseXml(filePath: string, module: string): XmlItem[] {
         const id = t["@_id"] ?? ""
         if (!id) continue
         const xmlId = qualifyId(id)
-        items.push({
-          itemType: "view",
-          name: xmlId,
-          parentName: t["@_inherit_id"] ?? null,
-          module,
-          attributes: { name: t["@_name"] ?? "", inherit_id: t["@_inherit_id"] ?? "" },
-        })
+         items.push({
+           itemType: "view",
+           name: xmlId,
+           parentName: t["@_inherit_id"] ?? null,
+           module,
+           attributes: { name: t["@_name"] ?? "", inherit_id: t["@_inherit_id"] ?? "" },
+           references: [{
+             filePath,
+             lineNumber: lineNumberOf(src, `id="${id}"`),
+             referenceType: "definition" as const,
+             context: `<template id="${id}">`,
+           }],
+         })
       }
     }
 
@@ -101,18 +125,24 @@ export function parseXml(filePath: string, module: string): XmlItem[] {
         const id = a["@_id"] ?? ""
         if (!id) continue
         const xmlId = qualifyId(id)
-        items.push({
-          itemType: "record",
-          name: xmlId,
-          parentName: null,
-          module,
-          attributes: {
-            name: a["@_name"] ?? "",
-            res_model: a["@_res_model"] ?? "",
-            view_mode: a["@_view_mode"] ?? "",
-            domain: a["@_domain"] ?? "",
-          },
-        })
+         items.push({
+           itemType: "record",
+           name: xmlId,
+           parentName: null,
+           module,
+           attributes: {
+             name: a["@_name"] ?? "",
+             res_model: a["@_res_model"] ?? "",
+             view_mode: a["@_view_mode"] ?? "",
+             domain: a["@_domain"] ?? "",
+           },
+           references: [{
+             filePath,
+             lineNumber: lineNumberOf(src, `id="${id}"`),
+             referenceType: "definition" as const,
+             context: `<act_window id="${id}">`,
+           }],
+         })
       }
     }
   } catch {}
