@@ -1,4 +1,5 @@
 import { readFileSync } from "node:fs"
+import type { PythonItemReference } from "./python-regex"
 
 export interface CsvItem {
   itemType: string
@@ -6,6 +7,7 @@ export interface CsvItem {
   parentName: string | null
   module: string
   attributes: Record<string, any>
+  references?: PythonItemReference[]
 }
 
 function parseCsvRfc4180(csvContent: string): string[][] {

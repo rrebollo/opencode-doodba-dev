@@ -5,7 +5,7 @@ import { DoodbaIndexDatabase } from "./database"
 import { discoverModules, findCycles, resolveDependencyOrder } from "./dependency-tree"
 import { parseCsv } from "./parsers/csv"
 import { parseManifest } from "./parsers/manifest"
-import { parsePythonRegex as parsePython } from "./parsers/python-regex"
+import { parsePythonAst as parsePython } from "./parsers/python-ast"
 import { parseXml } from "./parsers/xml"
 
 function fileHash(filePath: string): string {
@@ -95,7 +95,7 @@ export function indexModules(opts: IndexOptions): {
           try {
             const items = parsePython(f, mod.name)
             for (const item of items) {
-              db.upsertItem(
+              const itemId = db.upsertItem(
                 item.itemType,
                 item.name,
                 item.parentName,
@@ -103,6 +103,9 @@ export function indexModules(opts: IndexOptions): {
                 item.attributes,
                 mod.depth,
               )
+              for (const ref of item.references ?? []) {
+                db.upsertReference(itemId, ref.filePath, ref.lineNumber, ref.referenceType, ref.context ?? null)
+              }
             }
             db.upsertFileMetadata(f, mod.name, hash)
             indexed++
@@ -122,7 +125,10 @@ export function indexModules(opts: IndexOptions): {
           try {
             const items = parseXml(f, mod.name)
             for (const item of items) {
-              db.upsertItem(item.itemType, item.name, item.parentName, item.module, item.attributes)
+              const itemId = db.upsertItem(item.itemType, item.name, item.parentName, item.module, item.attributes)
+              for (const ref of item.references ?? []) {
+                db.upsertReference(itemId, ref.filePath, ref.lineNumber, ref.referenceType, ref.context ?? null)
+              }
             }
             db.upsertFileMetadata(f, mod.name, hash)
             indexed++
@@ -142,7 +148,10 @@ export function indexModules(opts: IndexOptions): {
           try {
             const items = parseCsv(f, mod.name)
             for (const item of items) {
-              db.upsertItem(item.itemType, item.name, item.parentName, item.module, item.attributes)
+              const itemId = db.upsertItem(item.itemType, item.name, item.parentName, item.module, item.attributes)
+              for (const ref of item.references ?? []) {
+                db.upsertReference(itemId, ref.filePath, ref.lineNumber, ref.referenceType, ref.context ?? null)
+              }
             }
             db.upsertFileMetadata(f, mod.name, hash)
             indexed++

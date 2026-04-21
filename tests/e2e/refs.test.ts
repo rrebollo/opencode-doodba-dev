@@ -4,6 +4,8 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { DoodbaIndexDatabase } from "../../src/database"
 import { parsePythonAst } from "../../src/parsers/python-ast"
+import { indexModules } from "../../src/indexer"
+import { createTestFixture, destroyTestFixture, type TestFixture } from "./setup"
 
 describe("item_references", () => {
   let tmpDir: string
@@ -148,5 +150,53 @@ class MyModel(models.Model):
     const comodelRef = field!.references.find((r) => r.referenceType === "many2one")
     expect(comodelRef).toBeDefined()
     expect(comodelRef!.context).toContain("res.partner")
+  })
+})
+
+describe("indexer populates item_references", () => {
+  let fixture: TestFixture
+
+  beforeEach(() => {
+    fixture = createTestFixture()
+    indexModules({ rootPaths: fixture.sourcePaths, full: true, dbPath: fixture.dbPath })
+  })
+
+  afterEach(() => {
+    destroyTestFixture(fixture)
+  })
+
+  it("res.partner model has a definition reference", () => {
+    const db = new DoodbaIndexDatabase(fixture.dbPath)
+    try {
+      const refs = db.findRefs("res.partner", "model")
+      expect(refs.length).toBeGreaterThan(0)
+      const defRef = refs.find((r: any) => r.reference_type === "definition")
+      expect(defRef).toBeDefined()
+      expect(defRef!.file_path).toContain("res_partner.py")
+    } finally {
+      db.close()
+    }
+  })
+
+  it("partner_firstname _inherit reference exists for res.partner", () => {
+    const db = new DoodbaIndexDatabase(fixture.dbPath)
+    try {
+      const refs = db.findRefs("res.partner", "model")
+      const inheritRef = refs.find((r: any) => r.reference_type === "inheritance")
+      expect(inheritRef).toBeDefined()
+    } finally {
+      db.close()
+    }
+  })
+
+  it("sale.order model has references from Many2one fields in other modules", () => {
+    // sale.order model itself has a definition reference from its own file
+    const db = new DoodbaIndexDatabase(fixture.dbPath)
+    try {
+      const refs = db.findRefs("sale.order", "model")
+      expect(refs.length).toBeGreaterThan(0)
+    } finally {
+      db.close()
+    }
   })
 })

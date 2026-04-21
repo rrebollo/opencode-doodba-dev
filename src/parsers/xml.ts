@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs"
 import { XMLParser } from "fast-xml-parser"
+import type { PythonItemReference } from "./python-regex"
 
 export interface XmlItem {
   itemType: string
@@ -7,6 +8,7 @@ export interface XmlItem {
   parentName: string | null
   module: string
   attributes: Record<string, any>
+  references?: PythonItemReference[]
 }
 
 const parser = new XMLParser({
