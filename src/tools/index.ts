@@ -275,7 +275,12 @@ export const doodbaTools = {
         return formatResponse(notReady.status, {}, notReady.message)
       }
       try {
-        const status = await withDb(context.directory, (db) => db.indexStatus())
+        const state = readState(context.directory)
+        const dbStatus = await withDb(context.directory, (db) => db.indexStatus())
+        const status = {
+          ...dbStatus,
+          missingDeps: state.missingDeps,
+        }
         return formatResponse("READY", status, undefined)
       } catch (e) {
         return formatResponse("FAILED", {}, e instanceof Error ? e.message : String(e))

@@ -119,14 +119,15 @@ describe("plugin tool queries", () => {
     }
   })
 
-  it("uses context.directory instead of process.cwd()", () => {
+  it("database queries work regardless of process.cwd()", () => {
+    // Documents that DoodbaIndexDatabase uses an explicit dbPath, not process.cwd().
+    // The tool layer enforces this by passing context.directory to getProjectDbPath()
+    // rather than relying on process.cwd() — this test verifies the DB layer holds up
+    // when cwd changes under it.
     const originalCwd = process.cwd()
     try {
-      // Change to unrelated directory (temp directory)
       chdir(tmpdir())
 
-      // Tool should still work because it uses context.directory
-      // This test documents the expected behavior - tools don't rely on process.cwd()
       const db = new DoodbaIndexDatabase(fixture.dbPath)
       try {
         const results = db.search({ query: "res.partner", itemType: "model" })

@@ -47,6 +47,10 @@ Nine tools appear in chat immediately after installation:
 
 - **doodba_index_status** — Show current index status including item counts (models, fields, views, etc.) and last indexed timestamp.
 
+## Skills
+
+When a Doodba project is detected, the plugin automatically injects the **`doodba-exploring`** skill into OpenCode. This skill instructs the AI to use the `doodba_*` tools proactively when exploring Odoo code — before reading files, before writing code, and when validating model/field/XML ID references.
+
 ## Commands
 
 - **/doodba-setup** — Validate Doodba environment (Docker, Python, uv), detect Odoo path, and build the indexer database.
