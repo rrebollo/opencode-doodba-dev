@@ -93,14 +93,19 @@ describe("plugin tool queries", () => {
     }
   })
 
-  it("doodba_find_refs returns references", () => {
+  it("doodba_find_refs returns references for indexed models", () => {
     const db = new DoodbaIndexDatabase(fixture.dbPath)
     try {
-      // my_module's order_id field references sale.order
-      const refs = db.findRefs("sale.order", "model")
-      // Note: references may or may not be populated depending on parser implementation
-      // This test documents expected behavior
+      const refs = db.findRefs("res.partner", "model")
       expect(Array.isArray(refs)).toBe(true)
+      // res.partner is defined in base and inherited in partner_firstname
+      expect(refs.length).toBeGreaterThan(0)
+      // Every ref must have required fields
+      for (const ref of refs) {
+        expect(typeof ref.file_path).toBe("string")
+        expect(typeof ref.line_number).toBe("number")
+        expect(typeof ref.reference_type).toBe("string")
+      }
     } finally {
       db.close()
     }
