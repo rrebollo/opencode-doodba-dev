@@ -8,6 +8,18 @@ import { parseManifest } from "./parsers/manifest";
 import { parsePythonAst as parsePython } from "./parsers/python-ast";
 import { parseXml } from "./parsers/xml";
 
+// Directories never relevant to code indexing
+const SKIP_DIRS = new Set([
+  "static", // JS, SCSS, images
+  "i18n", // .po/.pot translation files
+  "__pycache__", // Python bytecode cache
+  "node_modules", // NPM dependencies
+  "setup", // OCA setup files
+  "readme", // Documentation dirs
+  "doc", // Documentation
+  "migrations", // Migration scripts (configurable later)
+]);
+
 // 64-bit collision resistance (16 hex chars = ~64 bits)
 const HASH_LENGTH = 16;
 
@@ -109,7 +121,12 @@ function walkDir(dir: string, exts: string[], visited = new Set<number>()): stri
     for (const entry of entries) {
       const full = join(realDir, entry.name);
 
-      if (entry.isDirectory() && !entry.isSymbolicLink() && !entry.name.startsWith(".")) {
+      if (
+        entry.isDirectory() &&
+        !entry.isSymbolicLink() &&
+        !entry.name.startsWith(".") &&
+        !SKIP_DIRS.has(entry.name)
+      ) {
         results.push(...walkDir(full, exts, visited));
       } else if (!entry.isDirectory() && exts.some((ext) => full.endsWith(ext))) {
         results.push(full);
