@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { ParsedItem } from "./types";
-import { PythonBatchParser } from "./python-batch";
+import { PythonParserPool } from "./python-pool";
 
 const PYTHON_BINARY = process.env.OPENCODE_PYTHON ?? "python3";
 const PYTHON_SUBPROCESS_TIMEOUT_MS = 10_000;
@@ -12,52 +12,54 @@ const PYTHON_SUBPROCESS_TIMEOUT_MS = 10_000;
 
 const SCRIPT_PATH = join(dirname(fileURLToPath(import.meta.url)), "python_ast_extract.py");
 
-let batchParser: PythonBatchParser | null = null;
+let parserPool: PythonParserPool | null = null;
 
 /**
- * Start the batch Python parser process.
+ * Start the batch Python parser pool.
  * Should be called once at the beginning of an indexing session.
+ * Creates a pool of 4 worker processes for parallel parsing.
  */
 export async function startBatchParser(): Promise<void> {
-  if (batchParser) return;
-  batchParser = new PythonBatchParser(PYTHON_BINARY);
-  await batchParser.start();
+  if (parserPool) return;
+  parserPool = new PythonParserPool(4);
+  await parserPool.start();
 }
 
 /**
- * Stop the batch Python parser process.
+ * Stop the batch Python parser pool.
  * Should be called once at the end of an indexing session.
+ * Shuts down all worker processes.
  */
 export async function stopBatchParser(): Promise<void> {
-  if (batchParser) {
-    await batchParser.stop();
-    batchParser = null;
+  if (parserPool) {
+    await parserPool.stop();
+    parserPool = null;
   }
 }
 
 /**
- * Parse a Python file using the batch parser if available,
+ * Parse a Python file using the parser pool if available,
  * otherwise falls back to per-file subprocess.
  * Falls back to empty array if Python is unavailable or the script fails.
  * Fixes the class body boundary bug present in the regex parser.
  */
 export async function parsePythonAst(filePath: string, module: string): Promise<ParsedItem[]> {
-  // Try batch parser first
-  if (batchParser) {
+  // Try parser pool first
+  if (parserPool) {
     try {
       const content = readFileSync(filePath, "utf-8");
-      const result = await batchParser.parse({
+      const result = await parserPool.parse({
         file_path: filePath,
         content,
         module_name: module,
       });
       if (result.error) {
-        console.warn(`[python-ast] Batch parser failed for ${filePath}:`, result.error);
+        console.warn(`[python-ast] Parser pool failed for ${filePath}:`, result.error);
         return [];
       }
       return Array.isArray(result.items) ? result.items : [];
     } catch (err) {
-      console.warn(`[python-ast] Batch parser error for ${filePath}:`, err);
+      console.warn(`[python-ast] Parser pool error for ${filePath}:`, err);
       // Fall through to fallback
     }
   }
