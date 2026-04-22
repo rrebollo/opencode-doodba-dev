@@ -20,6 +20,59 @@ const SKIP_DIRS = new Set([
   "migrations", // Migration scripts (configurable later)
 ]);
 
+interface ModuleFiles {
+  py: string[];
+  xml: string[];
+  csv: string[];
+}
+
+function walkModule(dir: string, visited = new Set<number>()): ModuleFiles {
+  const result: ModuleFiles = { py: [], xml: [], csv: [] };
+
+  let realDir: string;
+  let inode: number;
+  try {
+    realDir = realpathSync(dir);
+    inode = statSync(realDir).ino;
+  } catch (e) {
+    console.warn(`[walkModule] cannot stat ${dir}: ${e}`);
+    return result;
+  }
+
+  if (visited.has(inode)) {
+    console.warn(`[walkModule] cycle detected at ${dir} (inode ${inode})`);
+    return result;
+  }
+  visited.add(inode);
+
+  try {
+    const entries = readdirSync(realDir, { withFileTypes: true });
+    for (const entry of entries) {
+      const full = join(realDir, entry.name);
+
+      if (
+        entry.isDirectory() &&
+        !entry.isSymbolicLink() &&
+        !entry.name.startsWith(".") &&
+        !SKIP_DIRS.has(entry.name)
+      ) {
+        const sub = walkModule(full, visited);
+        result.py.push(...sub.py);
+        result.xml.push(...sub.xml);
+        result.csv.push(...sub.csv);
+      } else if (!entry.isDirectory()) {
+        if (full.endsWith(".py")) result.py.push(full);
+        else if (full.endsWith(".xml")) result.xml.push(full);
+        else if (full.endsWith(".csv")) result.csv.push(full);
+      }
+    }
+  } catch (e) {
+    console.warn(`[walkModule] failed to read ${realDir}: ${e}`);
+  }
+
+  return result;
+}
+
 // 64-bit collision resistance (16 hex chars = ~64 bits)
 const HASH_LENGTH = 16;
 
@@ -95,50 +148,6 @@ function fileHash(filePath: string): string {
   }
 }
 
-function walkDir(dir: string, exts: string[], visited = new Set<number>()): string[] {
-  const results: string[] = [];
-
-  // Get real path and inode
-  let realDir: string;
-  let inode: number;
-  try {
-    realDir = realpathSync(dir);
-    inode = statSync(realDir).ino;
-  } catch (e) {
-    console.warn(`[walkDir] cannot stat ${dir}: ${e}`);
-    return results;
-  }
-
-  // Check for cycle
-  if (visited.has(inode)) {
-    console.warn(`[walkDir] cycle detected at ${dir} (inode ${inode})`);
-    return results;
-  }
-  visited.add(inode);
-
-  try {
-    const entries = readdirSync(realDir, { withFileTypes: true });
-    for (const entry of entries) {
-      const full = join(realDir, entry.name);
-
-      if (
-        entry.isDirectory() &&
-        !entry.isSymbolicLink() &&
-        !entry.name.startsWith(".") &&
-        !SKIP_DIRS.has(entry.name)
-      ) {
-        results.push(...walkDir(full, exts, visited));
-      } else if (!entry.isDirectory() && exts.some((ext) => full.endsWith(ext))) {
-        results.push(full);
-      }
-    }
-  } catch (e) {
-    console.warn(`[walkDir] failed to read ${realDir}: ${e}`);
-  }
-
-  return results;
-}
-
 export interface IndexOptions {
   rootPaths: string[];
   modules?: string[];
@@ -187,8 +196,10 @@ export function indexModules(opts: IndexOptions): {
 
       db.beginTransaction();
       try {
+        const files = walkModule(mod.path);
+
         // Python files
-        indexFiles(walkDir(mod.path, [".py"]), parsePython, {
+        indexFiles(files.py, parsePython, {
           full: opts.full,
           mod,
           db,
@@ -197,10 +208,10 @@ export function indexModules(opts: IndexOptions): {
         });
 
         // XML files
-        indexFiles(walkDir(mod.path, [".xml"]), parseXml, { full: opts.full, mod, db, counters });
+        indexFiles(files.xml, parseXml, { full: opts.full, mod, db, counters });
 
         // CSV files
-        indexFiles(walkDir(mod.path, [".csv"]), parseCsv, { full: opts.full, mod, db, counters });
+        indexFiles(files.csv, parseCsv, { full: opts.full, mod, db, counters });
 
         db.commitTransaction();
       } catch (e) {
