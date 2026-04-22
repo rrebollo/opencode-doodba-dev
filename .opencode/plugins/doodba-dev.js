@@ -1,212 +1,162 @@
 /**
  * opencode-doodba-dev plugin for OpenCode.ai
  *
- * Exports Doodba development tools. Only injects commands, agents, and skills
- * when a Doodba project is detected in the current directory tree.
+ * This plugin does three things:
+ *
+ * 1. Registers doodba_* tools always (they self-report gracefully when not in a Doodba project).
+ * 2. Conditionally injects commands, agents, and skills ONLY when a Doodba project is detected.
+ *    We inject manually (not via OpenCode's native .opencode/ discovery) because native discovery
+ *    is always-on and cannot be gated on Doodba project detection.
+ * 3. Triggers background auto-indexing when a Doodba project is detected.
  */
 
 import path from 'path'
 import fs from 'fs'
-import os from 'os'
 import { fileURLToPath } from 'url'
 
+// packageRoot: two levels up from .opencode/plugins/ → repo root
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const packageRoot = path.resolve(__dirname, '../..')
 
 /**
- * Simple frontmatter parser for markdown files
+ * Parse YAML frontmatter from markdown content.
+ * Returns { frontmatter: Record<string,string>, body: string }.
  */
 function parseFrontmatter(content) {
   const match = content.match(/^---\n([\s\S]*?)\n---\n([\s\S]*)$/)
-  if (!match) return { frontmatter: {}, content }
-
-  const frontmatterStr = match[1]
-  const body = match[2]
+  if (!match) return { frontmatter: {}, body: content }
   const frontmatter = {}
-
-  for (const line of frontmatterStr.split('\n')) {
-    const colonIdx = line.indexOf(':')
-    if (colonIdx > 0) {
-      const key = line.slice(0, colonIdx).trim()
-      const value = line.slice(colonIdx + 1).trim().replace(/^["']|["']$/g, '')
-      frontmatter[key] = value
+  for (const line of match[1].split('\n')) {
+    const colon = line.indexOf(':')
+    if (colon > 0) {
+      const key = line.slice(0, colon).trim()
+      const val = line.slice(colon + 1).trim().replace(/^["']|["']$/g, '')
+      frontmatter[key] = val
     }
   }
-
-  return { frontmatter, content: body }
+  return { frontmatter, body: match[2].trim() }
 }
 
 /**
- * Discover and parse command markdown files from a directory
+ * Load all .md files from dir, returning name → transform(frontmatter, body).
  */
-function discoverCommands(commandsDir) {
-  const commands = {}
-  if (!fs.existsSync(commandsDir)) return commands
-
+function loadMarkdownDir(dir, transform) {
+  const result = {}
+  if (!fs.existsSync(dir)) return result
   try {
-    const files = fs.readdirSync(commandsDir)
-    for (const file of files) {
+    for (const file of fs.readdirSync(dir)) {
       if (!file.endsWith('.md')) continue
-      const filePath = path.join(commandsDir, file)
       try {
-        const content = fs.readFileSync(filePath, 'utf8')
-        const { frontmatter, content: body } = parseFrontmatter(content)
-        const name = file.replace(/\.md$/, '')
-        commands[name] = {
-          description: frontmatter.description || '',
-          template: body.trim(),
-          agent: frontmatter.agent,
-          subtask: frontmatter.subtask === 'true' ? true : undefined,
-          model: frontmatter.model,
-        }
-        Object.keys(commands[name]).forEach(key => {
-          if (commands[name][key] === undefined) delete commands[name][key]
-        })
+        const raw = fs.readFileSync(path.join(dir, file), 'utf8')
+        const { frontmatter, body } = parseFrontmatter(raw)
+        result[file.slice(0, -3)] = transform(frontmatter, body)
       } catch (e) {
-        console.warn(`[doodba-dev] Failed to parse command ${file}:`, e.message)
+        console.warn(`[doodba-dev] Failed to load ${dir}/${file}:`, e.message)
       }
     }
   } catch (e) {
-    console.warn(`[doodba-dev] Failed to read commands directory:`, e.message)
+    console.warn(`[doodba-dev] Failed to read directory ${dir}:`, e.message)
   }
-
-  return commands
+  return result
 }
 
 /**
- * Discover and parse agent markdown files from a directory
- */
-function discoverAgents(agentsDir) {
-  const agents = {}
-  if (!fs.existsSync(agentsDir)) return agents
-
-  try {
-    const files = fs.readdirSync(agentsDir)
-    for (const file of files) {
-      if (!file.endsWith('.md')) continue
-      const filePath = path.join(agentsDir, file)
-      try {
-        const content = fs.readFileSync(filePath, 'utf8')
-        const { frontmatter, content: body } = parseFrontmatter(content)
-        const name = file.replace(/\.md$/, '')
-        agents[name] = {
-          description: frontmatter.description || '',
-          mode: frontmatter.mode || 'subagent',
-          prompt: body.trim(),
-        }
-        if (frontmatter.model) agents[name].model = frontmatter.model
-        if (frontmatter.temperature) agents[name].temperature = parseFloat(frontmatter.temperature)
-        if (frontmatter.tools) {
-          try { agents[name].tools = JSON.parse(frontmatter.tools) } catch {}
-        }
-        if (frontmatter.permission) {
-          try { agents[name].permission = JSON.parse(frontmatter.permission) } catch {}
-        }
-        if (frontmatter.hidden === 'true') agents[name].hidden = true
-        if (frontmatter.color) agents[name].color = frontmatter.color
-      } catch (e) {
-        console.warn(`[doodba-dev] Failed to parse agent ${file}:`, e.message)
-      }
-    }
-  } catch (e) {
-    console.warn(`[doodba-dev] Failed to read agents directory:`, e.message)
-  }
-
-  return agents
-}
-
-/**
- * Spawn indexer as a child process via Bun.spawn.
+ * Spawn the indexer as a background child process via Bun.spawn.
  * Fire-and-forget: does not await completion.
  */
 function spawnIndexing(projectDir, doodbaRootPath, sourcePaths) {
   const workerPath = path.resolve(packageRoot, 'src/indexer-worker.ts')
   Bun.spawn(
     ['bun', workerPath, projectDir, doodbaRootPath, ...sourcePaths],
-    {
-      stdout: 'pipe',
-      stderr: 'pipe',
-    }
+    { stdout: 'pipe', stderr: 'pipe' }
   )
-  // Fire-and-forget: don't await. State transitions are handled by the worker.
 }
 
 /**
- * DoodbaDevPlugin - OpenCode plugin factory
+ * DoodbaDevPlugin — OpenCode plugin factory.
  *
- * - Always registers doodba_* tools (they report NO_PROJECT gracefully when not in a Doodba project).
- * - Only injects commands, agents, and skills config when a Doodba project is detected.
- * - Triggers auto-indexing on plugin load when in a Doodba project.
+ * Always registers doodba_* tools (they report NO_PROJECT gracefully when not in a Doodba project).
+ * Only injects commands, agents, and skills config when a Doodba project is detected.
+ * Triggers auto-indexing on plugin load when in a Doodba project.
  */
 export const DoodbaDevPlugin = async ({ directory }) => {
-  // Dynamic imports — Bun compiles .ts at runtime
   const [
     { doodbaTools },
     { findDoodbaRoot, getSourcePaths },
-    { readState, updateState, getProjectDbPath },
-    { indexModules },
+    { readState },
   ] = await Promise.all([
     import(path.resolve(packageRoot, 'src/tools/index.ts')),
     import(path.resolve(packageRoot, 'src/doodba-detector.ts')),
     import(path.resolve(packageRoot, 'src/project-state.ts')),
-    import(path.resolve(packageRoot, 'src/indexer.ts')),
   ])
 
   const doodbaRoot = findDoodbaRoot(directory)
 
   if (!doodbaRoot) {
-    // Not a Doodba project — register tools only (they self-report NO_PROJECT)
+    // Not a Doodba project — register tools only.
     return { tool: doodbaTools }
   }
 
-  // Doodba project detected — trigger auto-indexing with doodbaRoot as anchor
+  // Doodba project detected — trigger auto-indexing if needed
   const state = readState(doodbaRoot)
   if (state.status === 'INDEXING' && state.startedAt) {
-    const started = new Date(state.startedAt).getTime()
-    if (Date.now() - started > 30 * 60 * 1000) {
-      // Stuck for > 30 min — retry
-      const sourcePaths = getSourcePaths(doodbaRoot)
-      spawnIndexing(doodbaRoot, doodbaRoot, sourcePaths)
+    const stuckMs = Date.now() - new Date(state.startedAt).getTime()
+    if (stuckMs > 30 * 60 * 1000) {
+      // Stuck > 30 min — restart
+      spawnIndexing(doodbaRoot, doodbaRoot, getSourcePaths(doodbaRoot))
     }
   } else if (state.status === 'NO_PROJECT' || state.status === 'FAILED') {
-    // Fire-and-forget
-    const sourcePaths = getSourcePaths(doodbaRoot)
-    spawnIndexing(doodbaRoot, doodbaRoot, sourcePaths)
+    spawnIndexing(doodbaRoot, doodbaRoot, getSourcePaths(doodbaRoot))
   }
 
-  // Discover commands and agents from package
-  const skillsDir = path.join(packageRoot, '.opencode/skills')
+  // Load commands and agents from the plugin package for conditional injection
   const commandsDir = path.join(packageRoot, '.opencode/commands')
   const agentsDir = path.join(packageRoot, '.opencode/agents')
-  const commands = discoverCommands(commandsDir)
-  const agents = discoverAgents(agentsDir)
+  const skillsDir = path.join(packageRoot, '.opencode/skills')
+
+  const commands = loadMarkdownDir(commandsDir, (fm, body) => {
+    const cmd = { description: fm.description || '', template: body }
+    if (fm.agent) cmd.agent = fm.agent
+    if (fm.subtask === 'true') cmd.subtask = true
+    if (fm.model) cmd.model = fm.model
+    return cmd
+  })
+
+  const agents = loadMarkdownDir(agentsDir, (fm, body) => {
+    const agent = { description: fm.description || '', mode: fm.mode || 'subagent', prompt: body }
+    if (fm.model) agent.model = fm.model
+    if (fm.temperature) agent.temperature = parseFloat(fm.temperature)
+    if (fm.hidden === 'true') agent.hidden = true
+    if (fm.color) agent.color = fm.color
+    return agent
+  })
+
+  console.log(
+    `[doodba-dev] Loaded ${Object.keys(commands).length} commands, ${Object.keys(agents).length} agents (project: ${doodbaRoot})`
+  )
 
   return {
     tool: doodbaTools,
 
     config: async (config) => {
-      // Inject skills path
+      // Inject skill discovery path
       config.skills = config.skills || {}
       config.skills.paths = config.skills.paths || []
       if (!config.skills.paths.includes(skillsDir)) {
         config.skills.paths.push(skillsDir)
       }
 
-      // Inject commands
+      // Inject commands (don't overwrite user-defined ones)
       config.command = config.command || {}
       for (const [name, cmd] of Object.entries(commands)) {
         if (!config.command[name]) config.command[name] = cmd
       }
 
-      // Inject agents
+      // Inject agents (don't overwrite user-defined ones)
       config.agent = config.agent || {}
       for (const [name, agent] of Object.entries(agents)) {
         if (!config.agent[name]) config.agent[name] = agent
       }
-
-      console.log(
-        `[doodba-dev] Loaded ${Object.keys(commands).length} commands, ${Object.keys(agents).length} agents (project: ${doodbaRoot})`
-      )
     },
   }
 }
