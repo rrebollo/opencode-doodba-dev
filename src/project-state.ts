@@ -12,48 +12,62 @@ export interface IndexerState {
   missingDeps: string[]
 }
 
-export const DEFAULT_STATE: IndexerState = {
+export const STATE_FILE_NAME = "state.json"
+export const DB_FILE_NAME = "index.db"
+export const PLUGIN_STATE_SUBDIR = ".opencode/doodba-dev"
+
+export const DEFAULT_STATE: Readonly<IndexerState> = Object.freeze({
   status: "NO_PROJECT",
   startedAt: null,
   completedAt: null,
   error: null,
   indexedFiles: 0,
   missingDeps: [],
-}
+})
 
-function getProjectDir(projectDir: string): string {
-  return join(projectDir, ".opencode", "doodba-dev")
+function getPluginDir(projectDir: string): string {
+  return join(projectDir, PLUGIN_STATE_SUBDIR)
 }
 
 export function ensureProjectDir(projectDir: string): void {
-  const dir = getProjectDir(projectDir)
+  const dir = getPluginDir(projectDir)
   if (!existsSync(dir)) {
     mkdirSync(dir, { recursive: true })
   }
 }
 
 export function getProjectDbPath(projectDir: string): string {
-  return join(getProjectDir(projectDir), "index.db")
+  return join(getPluginDir(projectDir), DB_FILE_NAME)
 }
 
 export function readState(projectDir: string): IndexerState {
   ensureProjectDir(projectDir)
-  const statePath = join(getProjectDir(projectDir), "state.json")
+  const statePath = join(getPluginDir(projectDir), STATE_FILE_NAME)
   if (!existsSync(statePath)) {
     return { ...DEFAULT_STATE }
   }
   try {
     const content = readFileSync(statePath, "utf-8")
     return { ...DEFAULT_STATE, ...JSON.parse(content) }
-  } catch {
+  } catch (err) {
+    console.warn(`Failed to parse state file at ${statePath}:`, err)
     return { ...DEFAULT_STATE }
   }
 }
 
 export function updateState(projectDir: string, partial: Partial<IndexerState>): void {
-  ensureProjectDir(projectDir)
-  const statePath = join(getProjectDir(projectDir), "state.json")
-  const current = readState(projectDir)
+  const dir = getPluginDir(projectDir)
+  mkdirSync(dir, { recursive: true })
+  const statePath = join(dir, STATE_FILE_NAME)
+  let current = { ...DEFAULT_STATE }
+  if (existsSync(statePath)) {
+    try {
+      const content = readFileSync(statePath, "utf-8")
+      current = { ...DEFAULT_STATE, ...JSON.parse(content) }
+    } catch (err) {
+      console.warn(`Failed to parse state file at ${statePath}:`, err)
+    }
+  }
   const next = { ...current, ...partial }
   writeFileSync(statePath, JSON.stringify(next, null, 2))
 }
