@@ -62,13 +62,13 @@ jobs:
         run: bun install --frozen-lockfile
 
       - name: Test
-        run: bun test
+        run: bun test 2>&1 | tee test_output.log
 
       - name: Upload test artifacts on failure
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: test-output
+          name: test-output-${{ github.run_id }}
           path: test_output.log
           if-no-files-found: ignore
           retention-days: 7
