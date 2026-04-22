@@ -15,7 +15,7 @@ OpenCode plugin for Doodba-based Odoo development. Fast code indexing, environme
 
 ## Installation
 
-Add to your `opencode.json` (global or project-level):
+Add to your Doodba project's `opencode.json` (in the project root, not your global OpenCode config):
 
 ```json
 {
@@ -23,7 +23,7 @@ Add to your `opencode.json` (global or project-level):
 }
 ```
 
-Restart OpenCode. The plugin auto-installs and tools auto-register.
+This ensures the plugin is only active when you open the Doodba project. Restart OpenCode. The plugin auto-installs and tools auto-register.
 
 ## Usage
 
@@ -59,15 +59,23 @@ When a Doodba project is detected, the plugin automatically injects the **`doodb
 
 ## Updating
 
-Updates auto-apply when you restart OpenCode (fetches latest from GitHub).
+The plugin is installed once in OpenCode's cache and then frozen at that version. To get a newer version, delete the cache directory and restart OpenCode:
 
-To pin a specific version:
+```bash
+rm -rf ~/.cache/opencode/packages/doodba-dev@git+https:/github.com/your-org/opencode-doodba-dev.git
+```
+
+OpenCode will re-install the latest version on next start.
+
+To pin a specific version instead, use a git tag in the URL:
 
 ```json
 {
   "plugin": ["doodba-dev@git+https://github.com/your-org/opencode-doodba-dev.git#v0.1.0"]
 }
 ```
+
+Then delete and re-install (as above) when you want to update to a new pinned version.
 
 ## Troubleshooting
 
