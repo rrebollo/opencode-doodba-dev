@@ -9,3 +9,5 @@ bun.lock
 .opencode/package-lock.json
 .opencode/plans/
 docs/superpowers/
+__pycache__/
+*.pyc
