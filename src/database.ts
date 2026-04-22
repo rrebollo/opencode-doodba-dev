@@ -159,7 +159,7 @@ export class DoodbaIndexDatabase {
     this.stmtUpsertItem = this.db.query(
       `INSERT INTO indexed_items (item_type, name, parent_name, module, attributes, dependency_depth)
        VALUES (?, ?, ?, ?, ?, ?)
-       ON CONFLICT(item_type, name, parent_name, module) DO UPDATE SET
+       ON CONFLICT(item_type, name, parent_name_key, module) DO UPDATE SET
          attributes=excluded.attributes,
          dependency_depth=excluded.dependency_depth
        RETURNING id`
@@ -193,7 +193,8 @@ export class DoodbaIndexDatabase {
         attributes TEXT,
         dependency_depth INTEGER DEFAULT 0,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        UNIQUE(item_type, name, parent_name, module)
+        parent_name_key TEXT GENERATED ALWAYS AS (COALESCE(parent_name, '')) STORED,
+        UNIQUE(item_type, name, parent_name_key, module)
       )
     `);
     this.db.run(`
