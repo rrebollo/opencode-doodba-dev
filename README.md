@@ -1,5 +1,9 @@
 # opencode-doodba-dev
 
+[![CI](https://github.com/rrebollo/opencode-doodba-dev/actions/workflows/ci.yml/badge.svg)](https://github.com/rrebollo/opencode-doodba-dev/actions/workflows/ci.yml)
+[![Bun](https://img.shields.io/badge/bun-1.3.11-F9F1E1?logo=bun)](https://bun.sh)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+
 OpenCode plugin for Doodba-based Odoo development. Fast code indexing, environment setup, and test execution.
 
 ## Features
@@ -19,7 +23,7 @@ Add to your Doodba project's `opencode.json` (in the project root, not your glob
 
 ```json
 {
-  "plugin": ["doodba-dev@git+https://github.com/your-org/opencode-doodba-dev.git"]
+  "plugin": ["doodba-dev@git+https://github.com/rrebollo/opencode-doodba-dev.git"]
 }
 ```
 
@@ -62,7 +66,7 @@ When a Doodba project is detected, the plugin automatically injects the **`doodb
 The plugin is installed once in OpenCode's cache and then frozen at that version. To get a newer version, delete the cache directory and restart OpenCode:
 
 ```bash
-rm -rf ~/.cache/opencode/packages/doodba-dev@git+https:/github.com/your-org/opencode-doodba-dev.git
+rm -rf ~/.cache/opencode/packages/doodba-dev@git+https:/github.com/rrebollo/opencode-doodba-dev.git
 ```
 
 OpenCode will re-install the latest version on next start.
@@ -71,7 +75,7 @@ To pin a specific version instead, use a git tag in the URL:
 
 ```json
 {
-  "plugin": ["doodba-dev@git+https://github.com/your-org/opencode-doodba-dev.git#v0.1.0"]
+  "plugin": ["doodba-dev@git+https://github.com/rrebollo/opencode-doodba-dev.git#v0.1.0"]
 }
 ```
 
