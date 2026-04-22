@@ -2,47 +2,18 @@ import { existsSync, statSync } from "node:fs"
 import { homedir } from "node:os"
 import { join } from "node:path"
 import { tool, type ToolContext } from "@opencode-ai/plugin"
-import { DoodbaIndexDatabase } from "../database"
 import { globToRegex } from "../glob"
-import { getProjectDbPath, readState, type IndexerState } from "../project-state"
-import { findDoodbaRoot } from "../doodba-detector"
-
-function resolveProjectDir(contextDir: string): string {
-  return findDoodbaRoot(contextDir) ?? contextDir
-}
-
-function withDb<T>(projectDir: string, fn: (db: DoodbaIndexDatabase) => T): Promise<T> {
-  const resolved = resolveProjectDir(projectDir)
-  const dbPath = getProjectDbPath(resolved)
-  const db = new DoodbaIndexDatabase(dbPath)
-  try {
-    return Promise.resolve(fn(db))
-  } finally {
-    db.close()
-  }
-}
-
-function formatResponse(status: IndexerState["status"], results: any, message?: string): string {
-  const payload: any = { _doodba_status: status }
-  if (message) payload._message = message
-  payload.results = results ?? []
-  return JSON.stringify(payload, null, 2)
-}
-
-function checkReady(projectDir: string): { ready: true } | { ready: false; status: IndexerState["status"]; message: string } {
-  const resolved = resolveProjectDir(projectDir)
-  const state = readState(resolved)
-  if (state.status === "READY") {
-    return { ready: true }
-  }
-  const messages: Record<IndexerState["status"], string> = {
-    NO_PROJECT: "No Doodba project detected (.copier-answers.yml not found). If you have a Doodba project, make sure you are in its directory or run /doodba-setup.",
-    INDEXING: "The indexer is building the database for the first time (2-5 min). Please try again in a few moments.",
-    READY: "",
-    FAILED: `Indexing error: ${state.error ?? "unknown"}. Run /doodba-setup to retry.`,
-  }
-  return { ready: false, status: state.status, message: messages[state.status] }
-}
+import { getProjectDbPath, readState } from "../project-state"
+import {
+  ENTITY_TYPES,
+  REF_ENTITY_TYPES,
+  BLOCKED_ROOTS,
+  executeWithReadyCheck,
+  formatResponse,
+  resolveProjectDir,
+  toErrorMessage,
+  withDb,
+} from "./helpers"
 
 export const doodbaTools = {
   doodba_search: tool({
@@ -51,7 +22,7 @@ export const doodbaTools = {
     args: {
       query: tool.schema.string().describe("Search term (model name, field name, etc.)"),
       type: tool.schema
-        .enum(["model", "field", "view", "method", "menuitem", "xml_id"])
+        .enum(ENTITY_TYPES)
         .optional()
         .describe("Item type filter"),
       module: tool.schema.string().optional().describe("Filter by module name"),
@@ -61,14 +32,11 @@ export const doodbaTools = {
         .describe("Filter by parent (e.g., model name for fields)"),
       limit: tool.schema.number().optional().describe("Max results (default 50)"),
     },
-    async execute(args, context: ToolContext) {
-      const ready = checkReady(context.directory)
-      if (!ready.ready) {
-        const notReady = ready as { ready: false; status: IndexerState["status"]; message: string }
-        return formatResponse(notReady.status, [], notReady.message)
-      }
-      try {
-        const results = await withDb(context.directory, (db) =>
+    execute(args, context: ToolContext) {
+      return executeWithReadyCheck(
+        context.directory,
+        [],
+        (db) =>
           db.search({
             query: args.query,
             itemType: args.type,
@@ -76,11 +44,7 @@ export const doodbaTools = {
             module: args.module,
             limit: args.limit,
           }),
-        )
-        return formatResponse("READY", results, undefined)
-      } catch (e) {
-        return formatResponse("FAILED", [], e instanceof Error ? e.message : String(e))
-      }
+      )
     },
   }),
 
@@ -90,21 +54,15 @@ export const doodbaTools = {
     args: {
       name: tool.schema.string().describe("Entity name (e.g., 'sale.order')"),
       type: tool.schema
-        .enum(["model", "field", "view", "method", "menuitem", "xml_id"])
+        .enum(ENTITY_TYPES)
         .describe("Entity type"),
     },
-    async execute(args, context: ToolContext) {
-      const ready = checkReady(context.directory)
-      if (!ready.ready) {
-        const notReady = ready as { ready: false; status: IndexerState["status"]; message: string }
-        return formatResponse(notReady.status, null, notReady.message)
-      }
-      try {
-        const result = await withDb(context.directory, (db) => db.getDetails(args.name, args.type))
-        return formatResponse("READY", result, undefined)
-      } catch (e) {
-        return formatResponse("FAILED", null, e instanceof Error ? e.message : String(e))
-      }
+    execute(args, context: ToolContext) {
+      return executeWithReadyCheck(
+        context.directory,
+        null,
+        (db) => db.getDetails(args.name, args.type),
+      )
     },
   }),
 
@@ -116,40 +74,31 @@ export const doodbaTools = {
         .optional()
         .describe("Optional glob-style filter (e.g., 'sale*')"),
     },
-    async execute(args, context: ToolContext) {
-      const ready = checkReady(context.directory)
-      if (!ready.ready) {
-        const notReady = ready as { ready: false; status: IndexerState["status"]; message: string }
-        return formatResponse(notReady.status, [], notReady.message)
-      }
-      try {
-        let modules = await withDb(context.directory, (db) => db.listModules())
-        if (args.pattern) {
-          const re = globToRegex(args.pattern)
-          modules = modules.filter((m) => re.test(m))
-        }
-        return formatResponse("READY", modules, undefined)
-      } catch (e) {
-        return formatResponse("FAILED", [], e instanceof Error ? e.message : String(e))
-      }
+    execute(args, context: ToolContext) {
+      return executeWithReadyCheck(
+        context.directory,
+        [],
+        (db) => {
+          let modules = db.listModules()
+          if (args.pattern) {
+            const re = globToRegex(args.pattern)
+            modules = modules.filter((m) => re.test(m))
+          }
+          return modules
+        },
+      )
     },
   }),
 
   doodba_module_stats: tool({
     description: "Get item count statistics for an Odoo module.",
     args: { module: tool.schema.string().describe("Module name") },
-    async execute(args, context: ToolContext) {
-      const ready = checkReady(context.directory)
-      if (!ready.ready) {
-        const notReady = ready as { ready: false; status: IndexerState["status"]; message: string }
-        return formatResponse(notReady.status, {}, notReady.message)
-      }
-      try {
-        const stats = await withDb(context.directory, (db) => db.moduleStats(args.module))
-        return formatResponse("READY", stats, undefined)
-      } catch (e) {
-        return formatResponse("FAILED", {}, e instanceof Error ? e.message : String(e))
-      }
+    execute(args, context: ToolContext) {
+      return executeWithReadyCheck(
+        context.directory,
+        {},
+        (db) => db.moduleStats(args.module),
+      )
     },
   }),
 
@@ -158,50 +107,40 @@ export const doodbaTools = {
       "Find all references to a model or field in the index. Returns file_path, line_number, reference_type, and context for each reference.",
     args: {
       name: tool.schema.string().describe("Entity name"),
-      type: tool.schema.enum(["model", "field", "view", "method"]).describe("Entity type"),
+      type: tool.schema.enum(REF_ENTITY_TYPES).describe("Entity type"),
     },
-    async execute(args, context: ToolContext) {
-      const ready = checkReady(context.directory)
-      if (!ready.ready) {
-        const notReady = ready as { ready: false; status: IndexerState["status"]; message: string }
-        return formatResponse(notReady.status, [], notReady.message)
-      }
-      try {
-        const refs = await withDb(context.directory, (db) => db.findRefs(args.name, args.type))
-        return formatResponse("READY", refs, undefined)
-      } catch (e) {
-        return formatResponse("FAILED", [], e instanceof Error ? e.message : String(e))
-      }
+    execute(args, context: ToolContext) {
+      return executeWithReadyCheck(
+        context.directory,
+        [],
+        (db) => db.findRefs(args.name, args.type),
+      )
     },
   }),
 
   doodba_search_by_attr: tool({
     description: "Search entities by attribute value (e.g., find all required fields).",
     args: {
-      type: tool.schema.enum(["model", "field", "view", "method"]).describe("Item type"),
+      type: tool.schema.enum(REF_ENTITY_TYPES).describe("Item type"),
       filters: tool.schema
         .string()
         .describe('JSON object of attribute filters, e.g. {"required": true}'),
       module: tool.schema.string().optional().describe("Filter by module"),
     },
-    async execute(args, context: ToolContext) {
-      const ready = checkReady(context.directory)
-      if (!ready.ready) {
-        const notReady = ready as { ready: false; status: IndexerState["status"]; message: string }
-        return formatResponse(notReady.status, [], notReady.message)
-      }
-      try {
-        let filters: Record<string, any>
-        try {
-          filters = JSON.parse(args.filters)
-        } catch {
-          return formatResponse("FAILED", [], "Error: filters must be valid JSON")
-        }
-        const results = await withDb(context.directory, (db) => db.searchByAttr(args.type, filters, args.module))
-        return formatResponse("READY", results, undefined)
-      } catch (e) {
-        return formatResponse("FAILED", [], e instanceof Error ? e.message : String(e))
-      }
+    execute(args, context: ToolContext) {
+      return executeWithReadyCheck(
+        context.directory,
+        [],
+        (db) => {
+          let filters: Record<string, any>
+          try {
+            filters = JSON.parse(args.filters)
+          } catch {
+            throw new Error("Error: filters must be valid JSON")
+          }
+          return db.searchByAttr(args.type, filters, args.module)
+        },
+      )
     },
   }),
 
@@ -212,18 +151,12 @@ export const doodbaTools = {
       module: tool.schema.string().optional().describe("Filter by module"),
       limit: tool.schema.number().optional().describe("Max results"),
     },
-    async execute(args, context: ToolContext) {
-      const ready = checkReady(context.directory)
-      if (!ready.ready) {
-        const notReady = ready as { ready: false; status: IndexerState["status"]; message: string }
-        return formatResponse(notReady.status, [], notReady.message)
-      }
-      try {
-        const results = await withDb(context.directory, (db) => db.searchXmlId(args.query, args.module, args.limit))
-        return formatResponse("READY", results, undefined)
-      } catch (e) {
-        return formatResponse("FAILED", [], e instanceof Error ? e.message : String(e))
-      }
+    execute(args, context: ToolContext) {
+      return executeWithReadyCheck(
+        context.directory,
+        [],
+        (db) => db.searchXmlId(args.query, args.module, args.limit),
+      )
     },
   }),
 
@@ -248,7 +181,6 @@ export const doodbaTools = {
           .split(",")
           .map((p) => p.trim())
           .filter(Boolean)
-        const BLOCKED_ROOTS = ["/", homedir()]
         for (const p of rootPaths) {
           if (!existsSync(p) || !statSync(p).isDirectory()) {
             return formatResponse("FAILED", [], `Error: "${p}" does not exist or is not a directory`)
@@ -268,7 +200,7 @@ export const doodbaTools = {
         const result = indexModules({ rootPaths, modules, full: args.full, dbPath: getProjectDbPath(resolved) })
         return formatResponse("READY", result, `Index updated: ${result.indexed} files indexed, ${result.skipped} skipped (unchanged), ${result.errors} errors`)
       } catch (e) {
-        return formatResponse("FAILED", [], e instanceof Error ? e.message : String(e))
+        return formatResponse("FAILED", [], toErrorMessage(e))
       }
     },
   }),
@@ -276,24 +208,19 @@ export const doodbaTools = {
   doodba_index_status: tool({
     description: "Show current index status (item counts, last indexed timestamp).",
     args: {},
-    async execute(_args, context: ToolContext) {
-      const ready = checkReady(context.directory)
-      if (!ready.ready) {
-        const notReady = ready as { ready: false; status: IndexerState["status"]; message: string }
-        return formatResponse(notReady.status, {}, notReady.message)
-      }
-      try {
-        const resolved = resolveProjectDir(context.directory)
-        const state = readState(resolved)
-        const dbStatus = await withDb(context.directory, (db) => db.indexStatus())
-        const status = {
-          ...dbStatus,
-          missingDeps: state.missingDeps,
-        }
-        return formatResponse("READY", status, undefined)
-      } catch (e) {
-        return formatResponse("FAILED", {}, e instanceof Error ? e.message : String(e))
-      }
+    execute(_args, context: ToolContext) {
+      return executeWithReadyCheck(
+        context.directory,
+        {},
+        (db, projectDir) => {
+          const state = readState(projectDir)
+          const dbStatus = db.indexStatus()
+          return {
+            ...dbStatus,
+            missingDeps: state.missingDeps,
+          }
+        },
+      )
     },
   }),
 }
