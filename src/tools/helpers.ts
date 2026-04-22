@@ -1,6 +1,7 @@
 import { type ToolResult } from "@opencode-ai/plugin";
 import { homedir } from "node:os";
 import { DoodbaIndexDatabase } from "../database";
+import { globalDatabaseCache } from "../database-cache";
 import { findDoodbaRoot } from "../doodba-detector";
 import { getProjectDbPath, readState, type IndexerState } from "../project-state";
 
@@ -57,16 +58,15 @@ export async function withDbAsync<T>(
   fn: (db: DoodbaIndexDatabase) => Promise<T>
 ): Promise<T> {
   const dbPath = getProjectDbPath(projectDir);
-  const db = new DoodbaIndexDatabase(dbPath);
-  try {
-    return await fn(db);
-  } finally {
-    try {
-      db.close();
-    } catch (e) {
-      console.error(`[withDbAsync] failed to close database: ${e}`);
-    }
+  // Try to get from cache
+  let db = globalDatabaseCache.get(dbPath);
+  if (!db) {
+    // Cache miss: create new connection
+    db = new DoodbaIndexDatabase(dbPath);
+    globalDatabaseCache.set(dbPath, db);
   }
+  // Use connection
+  return fn(db);
 }
 
 export async function executeWithReadyCheck<T>(
