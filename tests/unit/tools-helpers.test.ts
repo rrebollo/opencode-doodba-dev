@@ -16,16 +16,16 @@ describe("toErrorMessage", () => {
 
 describe("formatResponse", () => {
   test("includes status and results", () => {
-    const out = JSON.parse(formatResponse("READY", [{ name: "sale.order" }]))
+    const out = formatResponse("READY", [{ name: "sale.order" }])
     expect(out._doodba_status).toBe("READY")
     expect(out.results).toHaveLength(1)
   })
   test("includes message when provided", () => {
-    const out = JSON.parse(formatResponse("FAILED", [], "something broke"))
+    const out = formatResponse("FAILED", [], "something broke")
     expect(out._message).toBe("something broke")
   })
   test("omits message when undefined", () => {
-    const out = JSON.parse(formatResponse("READY", []))
+    const out = formatResponse("READY", [])
     expect(out._message).toBeUndefined()
   })
 })

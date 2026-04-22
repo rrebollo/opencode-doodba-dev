@@ -7,6 +7,7 @@ const parser = new XMLParser({
   ignoreAttributes: false,
   attributeNamePrefix: "@_",
   parseAttributeValue: false,
+  processEntities: false,  // Prevent XXE / billion-laughs attacks
 })
 
 function itemTypeFromModel(model: string): string {

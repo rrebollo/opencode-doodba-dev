@@ -20,15 +20,20 @@ export function toErrorMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err)
 }
 
+export interface ToolResponse {
+  _doodba_status: IndexerState["status"]
+  _message?: string
+  results: unknown
+}
+
 export function formatResponse(
   status: IndexerState["status"],
   results: unknown,
   message?: string,
-): string {
-  const payload: Record<string, unknown> = { _doodba_status: status }
+): ToolResponse {
+  const payload: ToolResponse = { _doodba_status: status, results: results ?? [] }
   if (message !== undefined) payload._message = message
-  payload.results = results ?? []
-  return JSON.stringify(payload, null, 2)
+  return payload
 }
 
 export function resolveProjectDir(contextDir: string): string {
@@ -98,7 +103,7 @@ export async function executeWithReadyCheck<T>(
   contextDir: string,
   emptyResult: T,
   fn: (db: DoodbaIndexDatabase, projectDir: string) => T | Promise<T>,
-): Promise<string> {
+): Promise<ToolResponse> {
   const ready = checkReady(contextDir)
   if (!ready.ready) return formatResponse(ready.status, emptyResult, ready.message)
   try {
