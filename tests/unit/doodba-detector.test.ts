@@ -1,19 +1,19 @@
-import { describe, expect, test } from "bun:test"
+import { describe, expect, test, beforeEach, afterEach } from "bun:test"
 import { findDoodbaRoot, getSourcePaths } from "../../src/doodba-detector"
 import { mkdirSync, writeFileSync, rmSync } from "node:fs"
 import { join } from "node:path"
 import { tmpdir } from "node:os"
 
-const TMP = join(tmpdir(), `doodba-detector-test-${Date.now()}`)
+let TMP: string
 
-function setup() {
+beforeEach(() => {
+  TMP = join(tmpdir(), `doodba-detector-test-${crypto.randomUUID()}`)
   mkdirSync(TMP, { recursive: true })
-  return TMP
-}
+})
 
-function teardown() {
+afterEach(() => {
   rmSync(TMP, { recursive: true, force: true })
-}
+})
 
 describe("findDoodbaRoot", () => {
   test("returns null when marker is not found within MAX_WALK_DEPTH", () => {
@@ -21,7 +21,6 @@ describe("findDoodbaRoot", () => {
     mkdirSync(deep, { recursive: true })
     const result = findDoodbaRoot(deep)
     expect(result).toBeNull()
-    teardown()
   })
 
   test("finds root at ancestor directory", () => {
@@ -31,7 +30,6 @@ describe("findDoodbaRoot", () => {
     writeFileSync(join(root, ".copier-answers.yml"), "")
     const result = findDoodbaRoot(subDir)
     expect(result).toBe(root)
-    teardown()
   })
 })
 
@@ -44,7 +42,6 @@ describe("getSourcePaths", () => {
     writeFileSync(join(srcDir, "my_module", "__manifest__.py"), "")
     const paths = getSourcePaths(root)
     expect(paths.every((p) => !p.includes("/.git"))).toBe(true)
-    teardown()
   })
 
   test("only returns directories containing __manifest__.py", () => {
@@ -56,6 +53,5 @@ describe("getSourcePaths", () => {
     const paths = getSourcePaths(root)
     expect(paths).toHaveLength(1)
     expect(paths[0]).toContain("real_module")
-    teardown()
   })
 })

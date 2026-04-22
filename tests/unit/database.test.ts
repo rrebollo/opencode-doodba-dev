@@ -4,10 +4,11 @@ import { unlinkSync } from "node:fs"
 import { join } from "node:path"
 import { tmpdir } from "node:os"
 
-const TMP_DB = join(tmpdir(), `test-database-${Date.now()}.db`)
+let TMP_DB: string
 let db: DoodbaIndexDatabase
 
 beforeEach(() => {
+  TMP_DB = join(tmpdir(), `test-database-${crypto.randomUUID()}.db`)
   db = new DoodbaIndexDatabase(TMP_DB)
 })
 
