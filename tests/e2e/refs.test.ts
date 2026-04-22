@@ -129,11 +129,11 @@ class ResPartner(models.Model):
     expect(field!.parentName).toBe("res.partner")
   })
 
-  it("returns [] for nonexistent file", () => {
-    const items = parsePythonAst("/nonexistent/file.py", "base")
-    expect(Array.isArray(items)).toBe(true)
-    expect(items.length).toBe(0)
-  })
+   it("returns [] for nonexistent file", () => {
+     const items = parsePythonAst("/nonexistent/file.py", "base")
+     // Should return an empty array, not undefined or null
+     expect(items).toEqual([])
+   })
 
   it("handles comodel_name kwarg form", () => {
     const pyFile = join(tmpDir2, "kwarg_model.py")
