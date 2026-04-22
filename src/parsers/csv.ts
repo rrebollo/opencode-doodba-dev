@@ -1,18 +1,14 @@
 import { readFileSync } from "node:fs"
-import type { PythonItemReference } from "./python-regex"
+import type { ParsedItem, ItemReference } from "./types"
+import { qualifyXmlId } from "./utils"
 
-export interface CsvItem {
-  itemType: string
-  name: string
-  parentName: string | null
-  module: string
-  attributes: Record<string, any>
-  references?: PythonItemReference[]
-}
+const CSV_ID_COLUMN = "id"
+const ITEM_TYPE_XML_ID = "xml_id"
 
 function parseCsvRfc4180(csvContent: string): string[][] {
+  const normalised = csvContent.replace(/\r\n/g, "\n").replace(/\r/g, "\n")
   const rows: string[][] = []
-  const lines = csvContent.split("\n")
+  const lines = normalised.split("\n")
   let currentField = ""
   let insideQuotes = false
   let currentRow: string[] = []
@@ -51,27 +47,29 @@ function parseCsvRfc4180(csvContent: string): string[][] {
   return rows
 }
 
-export function parseCsv(filePath: string, module: string): CsvItem[] {
-  const items: CsvItem[] = []
+export function parseCsv(filePath: string, module: string): ParsedItem[] {
+  const items: ParsedItem[] = []
   try {
     const content = readFileSync(filePath, "utf-8")
     const rows = parseCsvRfc4180(content)
     if (rows.length < 2) return items
 
     const headers = rows[0]
-    const idIdx = headers.indexOf("id")
+    const idIdx = headers.indexOf(CSV_ID_COLUMN)
     if (idIdx < 0) return items
 
     for (const row of rows.slice(1)) {
       const id = row[idIdx]?.trim()
       if (!id) continue
-      const xmlId = id.includes(".") ? id : `${module}.${id}`
-      const attrs: Record<string, any> = {}
+      const xmlId = qualifyXmlId(id, module)
+      const attrs: Record<string, string> = {}
       headers.forEach((h, i) => {
-        if (h !== "id" && row[i]) attrs[h] = row[i].trim()
+        if (h !== CSV_ID_COLUMN && row[i]) attrs[h] = row[i].trim()
       })
-      items.push({ itemType: "xml_id", name: xmlId, parentName: null, module, attributes: attrs })
+      items.push({ itemType: ITEM_TYPE_XML_ID, name: xmlId, parentName: null, module, attributes: attrs, references: [] })
     }
-  } catch {}
+  } catch (err) {
+    console.warn(`[csv] Failed to parse ${filePath}:`, err)
+  }
   return items
 }
