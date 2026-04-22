@@ -8,10 +8,71 @@ import { parseManifest } from "./parsers/manifest"
 import { parsePythonAst as parsePython } from "./parsers/python-ast"
 import { parseXml } from "./parsers/xml"
 
+// 64-bit collision resistance (16 hex chars = ~64 bits)
+const HASH_LENGTH = 16
+
+type FileParser = (filePath: string, module: string) => Array<{
+  itemType: string
+  name: string
+  parentName: string | null
+  module: string
+  attributes: Record<string, any>
+  references?: Array<{
+    filePath: string
+    lineNumber: number
+    referenceType: string
+    context?: string | null
+  }>
+}>
+
+interface IndexFilesOptions {
+  full: boolean | undefined
+  mod: { name: string; depth: number }
+  db: DoodbaIndexDatabase
+  counters: { indexed: number; skipped: number; errors: number }
+  dependencyDepth?: number
+}
+
+function indexFiles(
+  files: string[],
+  parser: FileParser,
+  opts: IndexFilesOptions,
+): void {
+  for (const f of files) {
+    const hash = fileHash(f)
+    const existing = opts.db.getFileHash(f)
+    if (!opts.full && existing === hash) {
+      opts.counters.skipped++
+      continue
+    }
+    try {
+      const items = parser(f, opts.mod.name)
+      for (const item of items) {
+        const itemId = opts.db.upsertItem(
+          item.itemType,
+          item.name,
+          item.parentName,
+          item.module,
+          item.attributes,
+          opts.dependencyDepth ?? opts.mod.depth,
+        )
+        for (const ref of item.references ?? []) {
+          opts.db.upsertReference(itemId, ref.filePath, ref.lineNumber, ref.referenceType, ref.context ?? null)
+        }
+      }
+      opts.db.upsertFileMetadata(f, opts.mod.name, hash)
+      opts.counters.indexed++
+    } catch (err) {
+      opts.counters.errors++
+      console.warn(`[indexer] Error parsing ${f}:`, err)
+    }
+  }
+}
+
 function fileHash(filePath: string): string {
   try {
     const content = readFileSync(filePath)
-    return createHash("sha256").update(content).digest("hex").slice(0, 16)
+    return createHash("sha256").update(content).digest("hex").slice(0, HASH_LENGTH)
   } catch {
     return ""
   }
@@ -29,7 +90,7 @@ function walkDir(dir: string, exts: string[]): string[] {
       }
     }
   } catch (err) {
-    console.warn("[indexer] Skipped directory (permission error or missing):", err)
+    console.warn("[indexer] Skipped directory:", err)
   }
   return results
 }
@@ -52,10 +113,8 @@ export function indexModules(opts: IndexOptions): {
   }
   const dbPath = opts.dbPath
   const db = new DoodbaIndexDatabase(dbPath)
-  let indexed = 0
-  let skipped = 0
-  let errors = 0
-  const missingDeps: string[] = []
+  const counters = { indexed: 0, skipped: 0, errors: 0 }
+  const missingDepsSet = new Set<string>()
 
   try {
     const allModules = discoverModules(opts.rootPaths)
@@ -72,98 +131,31 @@ export function indexModules(opts: IndexOptions): {
     for (const mod of toIndex) {
       // Check for missing dependencies
       for (const dep of mod.depends) {
-        if (!allModules.has(dep) && !missingDeps.includes(dep)) {
-          missingDeps.push(dep)
+        if (!allModules.has(dep)) {
+          missingDepsSet.add(dep)
         }
       }
       if (opts.full) db.clearModule(mod.name)
 
       // Index manifest
       const manifestPath = join(mod.path, "__manifest__.py")
-      const _manifest = parseManifest(manifestPath, mod.name)
+      parseManifest(manifestPath, mod.name)
 
       db.beginTransaction()
       try {
         // Python files
-        for (const f of walkDir(mod.path, [".py"])) {
-          const hash = fileHash(f)
-          const existing = db.getFileHash(f)
-          if (!opts.full && existing === hash) {
-            skipped++
-            continue
-          }
-          try {
-            const items = parsePython(f, mod.name)
-            for (const item of items) {
-              const itemId = db.upsertItem(
-                item.itemType,
-                item.name,
-                item.parentName,
-                item.module,
-                item.attributes,
-                mod.depth,
-              )
-              for (const ref of item.references ?? []) {
-                db.upsertReference(itemId, ref.filePath, ref.lineNumber, ref.referenceType, ref.context ?? null)
-              }
-            }
-            db.upsertFileMetadata(f, mod.name, hash)
-            indexed++
-          } catch {
-            errors++
-          }
-        }
+        indexFiles(walkDir(mod.path, [".py"]), parsePython, { full: opts.full, mod, db, counters, dependencyDepth: mod.depth })
 
         // XML files
-        for (const f of walkDir(mod.path, [".xml"])) {
-          const hash = fileHash(f)
-          const existing = db.getFileHash(f)
-          if (!opts.full && existing === hash) {
-            skipped++
-            continue
-          }
-          try {
-            const items = parseXml(f, mod.name)
-            for (const item of items) {
-              const itemId = db.upsertItem(item.itemType, item.name, item.parentName, item.module, item.attributes)
-              for (const ref of item.references ?? []) {
-                db.upsertReference(itemId, ref.filePath, ref.lineNumber, ref.referenceType, ref.context ?? null)
-              }
-            }
-            db.upsertFileMetadata(f, mod.name, hash)
-            indexed++
-          } catch {
-            errors++
-          }
-        }
+        indexFiles(walkDir(mod.path, [".xml"]), parseXml, { full: opts.full, mod, db, counters })
 
         // CSV files
-        for (const f of walkDir(mod.path, [".csv"])) {
-          const hash = fileHash(f)
-          const existing = db.getFileHash(f)
-          if (!opts.full && existing === hash) {
-            skipped++
-            continue
-          }
-          try {
-            const items = parseCsv(f, mod.name)
-            for (const item of items) {
-              const itemId = db.upsertItem(item.itemType, item.name, item.parentName, item.module, item.attributes)
-              for (const ref of item.references ?? []) {
-                db.upsertReference(itemId, ref.filePath, ref.lineNumber, ref.referenceType, ref.context ?? null)
-              }
-            }
-            db.upsertFileMetadata(f, mod.name, hash)
-            indexed++
-          } catch {
-            errors++
-          }
-        }
+        indexFiles(walkDir(mod.path, [".csv"]), parseCsv, { full: opts.full, mod, db, counters })
 
         db.commitTransaction()
       } catch (e) {
         db.rollbackTransaction()
-        errors++
+        counters.errors++
         console.warn(`[indexer] Transaction failed for module ${mod.name}:`, e)
       }
     }
@@ -171,5 +163,5 @@ export function indexModules(opts: IndexOptions): {
     db.close()
   }
 
-  return { indexed, skipped, errors, missingDeps }
+  return { indexed: counters.indexed, skipped: counters.skipped, errors: counters.errors, missingDeps: Array.from(missingDepsSet) }
 }
