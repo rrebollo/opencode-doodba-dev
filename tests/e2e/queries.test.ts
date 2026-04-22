@@ -53,18 +53,20 @@ describe("plugin tool queries", () => {
     }
   })
 
-  it("doodba_module_stats returns item counts", () => {
-    const db = new DoodbaIndexDatabase(fixture.dbPath)
-    try {
-      const stats = db.moduleStats("base")
-      expect(stats.model).toBeGreaterThan(0)
-      expect(stats.field).toBeGreaterThan(0)
-      // view key might not exist if no views are indexed
-      expect(typeof stats.view === "undefined" || stats.view >= 0).toBe(true)
-    } finally {
-      db.close()
-    }
-  })
+   it("doodba_module_stats returns item counts", () => {
+     const db = new DoodbaIndexDatabase(fixture.dbPath)
+     try {
+       const stats = db.moduleStats("base")
+       expect(stats.model).toBeGreaterThan(0)
+       expect(stats.field).toBeGreaterThan(0)
+       // view key might not exist if no views are indexed, but if present must be non-negative
+       if (stats.view !== undefined) {
+         expect(stats.view).toBeGreaterThanOrEqual(0)
+       }
+     } finally {
+       db.close()
+     }
+   })
 
   it("doodba_search_by_attr finds required fields", () => {
     const db = new DoodbaIndexDatabase(fixture.dbPath)
@@ -93,23 +95,23 @@ describe("plugin tool queries", () => {
     }
   })
 
-  it("doodba_find_refs returns references for indexed models", () => {
-    const db = new DoodbaIndexDatabase(fixture.dbPath)
-    try {
-      const refs = db.findRefs("res.partner", "model")
-      expect(Array.isArray(refs)).toBe(true)
-      // res.partner is defined in base and inherited in partner_firstname
-      expect(refs.length).toBeGreaterThan(0)
-      // Every ref must have required fields
-      for (const ref of refs) {
-        expect(typeof ref.file_path).toBe("string")
-        expect(typeof ref.line_number).toBe("number")
-        expect(typeof ref.reference_type).toBe("string")
-      }
-    } finally {
-      db.close()
-    }
-  })
+   it("doodba_find_refs returns references for indexed models", () => {
+     const db = new DoodbaIndexDatabase(fixture.dbPath)
+     try {
+       const refs = db.findRefs("res.partner", "model")
+       // res.partner is defined in base and inherited in partner_firstname
+       expect(refs.length).toBeGreaterThan(0)
+       // Every ref must have required fields
+       for (const ref of refs) {
+         expect(ref.file_path).toBeTruthy()
+         expect(typeof ref.file_path).toBe("string")
+         expect(typeof ref.line_number).toBe("number")
+         expect(typeof ref.reference_type).toBe("string")
+       }
+     } finally {
+       db.close()
+     }
+   })
 
   it("doodba_index_status returns counts", () => {
     const db = new DoodbaIndexDatabase(fixture.dbPath)
