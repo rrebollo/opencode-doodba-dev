@@ -259,6 +259,7 @@ export async function indexModules(opts: IndexOptions): Promise<{
     }
   } finally {
     await stopBatchParser();
+    db.clearQueryCaches();
     db.close();
   }
 

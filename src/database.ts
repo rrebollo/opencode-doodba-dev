@@ -7,6 +7,44 @@ import { dirname } from "node:path";
 
 const DEFAULT_SEARCH_LIMIT = 50;
 
+/**
+ * LRUCache with configurable max size and eviction of least-recently-used items.
+ * Moves accessed items to the end (most recently used) on get().
+ */
+class LRUCache<K, V> {
+  private cache = new Map<K, V>();
+  private readonly maxSize: number;
+
+  constructor(maxSize = 100) {
+    this.maxSize = maxSize;
+  }
+
+  get(key: K): V | undefined {
+    if (!this.cache.has(key)) return undefined;
+    // Move to end (most recently used)
+    const value = this.cache.get(key)!;
+    this.cache.delete(key);
+    this.cache.set(key, value);
+    return value;
+  }
+
+  set(key: K, value: V): void {
+    if (this.cache.has(key)) {
+      this.cache.delete(key);
+    }
+    this.cache.set(key, value);
+    // Evict oldest if over capacity
+    if (this.cache.size > this.maxSize) {
+      const oldest = this.cache.keys().next().value;
+      this.cache.delete(oldest);
+    }
+  }
+
+  clear(): void {
+    this.cache.clear();
+  }
+}
+
 interface RawIndexedItemRow {
   id: number;
   item_type: string;
@@ -104,6 +142,12 @@ export class DoodbaIndexDatabase {
   private stmtUpsertRef: ReturnType<Database["query"]>;
   private stmtUpsertFileMeta: ReturnType<Database["query"]>;
   private stmtGetFileHash: ReturnType<Database["query"]>;
+  private moduleListCache = new LRUCache<void, string[]>(1);
+  private moduleStatsCache = new LRUCache<string, Record<string, number>>(100);
+  private indexStatusCache = new LRUCache<
+    void,
+    { totalItems: number; totalModules: number; lastIndexed: string | null }
+  >(1);
 
   constructor(dbPath: string) {
     mkdirSync(dirname(dbPath), { recursive: true });
@@ -323,20 +367,38 @@ export class DoodbaIndexDatabase {
   }
 
   listModules(): string[] {
-    return this.db
+    // Try cache
+    const cached = this.moduleListCache.get(undefined);
+    if (cached) return cached;
+
+    // Query database
+    const result = this.db
       .query<{ module: string }, []>("SELECT DISTINCT module FROM indexed_items ORDER BY module")
       .all()
       .map((r) => r.module);
+
+    // Cache result
+    this.moduleListCache.set(undefined, result);
+    return result;
   }
 
   moduleStats(module: string): Record<string, number> {
+    // Try cache
+    const cached = this.moduleStatsCache.get(module);
+    if (cached) return cached;
+
+    // Query database
     const rows = this.db
       .query<
         { item_type: string; cnt: number },
         [string]
       >("SELECT item_type, COUNT(*) as cnt FROM indexed_items WHERE module=? GROUP BY item_type")
       .all(module);
-    return Object.fromEntries(rows.map((r) => [r.item_type, r.cnt]));
+    const result = Object.fromEntries(rows.map((r) => [r.item_type, r.cnt]));
+
+    // Cache result
+    this.moduleStatsCache.set(module, result);
+    return result;
   }
 
   findRefs(name: string, itemType: string): ItemReference[] {
@@ -421,6 +483,11 @@ export class DoodbaIndexDatabase {
   }
 
   indexStatus(): { totalItems: number; totalModules: number; lastIndexed: string | null } {
+    // Try cache
+    const cached = this.indexStatusCache.get(undefined);
+    if (cached) return cached;
+
+    // Query database
     const total =
       this.db.query<{ cnt: number }, []>("SELECT COUNT(*) as cnt FROM indexed_items").get()?.cnt ??
       0;
@@ -435,7 +502,17 @@ export class DoodbaIndexDatabase {
           []
         >("SELECT MAX(last_indexed) as last_indexed FROM file_metadata")
         .get()?.last_indexed ?? null;
-    return { totalItems: total, totalModules: modules, lastIndexed: lastIdx };
+    const result = { totalItems: total, totalModules: modules, lastIndexed: lastIdx };
+
+    // Cache result
+    this.indexStatusCache.set(undefined, result);
+    return result;
+  }
+
+  clearQueryCaches(): void {
+    this.moduleListCache.clear();
+    this.moduleStatsCache.clear();
+    this.indexStatusCache.clear();
   }
 
   close(): void {
