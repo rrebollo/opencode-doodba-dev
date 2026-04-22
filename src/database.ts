@@ -347,6 +347,20 @@ export class DoodbaIndexDatabase {
     return row?.file_hash ?? null;
   }
 
+  getAllFileHashes(): Map<string, string> {
+    const rows = this.db
+      .query<
+        { file_path: string; file_hash: string },
+        []
+      >("SELECT file_path, file_hash FROM file_metadata")
+      .all();
+    const hashes = new Map<string, string>();
+    for (const row of rows) {
+      hashes.set(row.file_path, row.file_hash);
+    }
+    return hashes;
+  }
+
   indexStatus(): { totalItems: number; totalModules: number; lastIndexed: string | null } {
     const total =
       this.db.query<{ cnt: number }, []>("SELECT COUNT(*) as cnt FROM indexed_items").get()?.cnt ??

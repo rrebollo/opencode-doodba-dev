@@ -12,6 +12,9 @@ import {
 } from "./parsers/python-ast";
 import { parseXml } from "./parsers/xml";
 
+// Cache for file hashes to reduce database queries during indexing
+let fileHashCache: Map<string, string> | null = null;
+
 // Directories never relevant to code indexing
 const SKIP_DIRS = new Set([
   "static", // JS, SCSS, images
@@ -128,7 +131,7 @@ async function indexFiles(
 ): Promise<void> {
   for (const f of files) {
     const hash = fileHash(f);
-    const existing = opts.db.getFileHash(f);
+    const existing = getCachedFileHash(f);
     if (!opts.full && existing === hash) {
       opts.counters.skipped++;
       continue;
@@ -172,6 +175,14 @@ function fileHash(filePath: string): string {
   }
 }
 
+function preloadFileHashes(db: DoodbaIndexDatabase): void {
+  fileHashCache = db.getAllFileHashes();
+}
+
+function getCachedFileHash(filePath: string): string | null {
+  return fileHashCache?.get(filePath) ?? null;
+}
+
 export interface IndexOptions {
   rootPaths: string[];
   modules?: string[];
@@ -195,6 +206,7 @@ export async function indexModules(opts: IndexOptions): Promise<{
 
   await startBatchParser();
   try {
+    preloadFileHashes(db);
     const allModules = discoverModules(opts.rootPaths);
     const cycleResult = findCycles(allModules);
     if (cycleResult.hasCycles) {
