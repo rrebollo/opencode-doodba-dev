@@ -1,6 +1,10 @@
 // tests/unit/parsers.test.ts
 import { describe, expect, test } from "bun:test";
+import { writeFileSync, unlinkSync } from "node:fs";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
 import { qualifyXmlId, lineNumberAt, toArray } from "../../src/parsers/utils";
+import { parseXml } from "../../src/parsers/xml";
 
 describe("qualifyXmlId", () => {
   test("returns id unchanged when already qualified", () => {
@@ -38,5 +42,49 @@ describe("toArray", () => {
   });
   test("returns empty array for null", () => {
     expect(toArray(null)).toEqual([]);
+  });
+});
+
+describe("xml ir.ui.view view_type aliasing", () => {
+  test("view_type is set from type field for ir.ui.view records", () => {
+    const tmp = join(tmpdir(), `view-type-test-${Math.random().toString(36).slice(2)}.xml`);
+    writeFileSync(
+      tmp,
+      `<?xml version="1.0"?>
+<odoo>
+  <data>
+    <record id="my_sale_view" model="ir.ui.view">
+      <field name="name">My Sale View</field>
+      <field name="model">sale.order</field>
+      <field name="type">form</field>
+    </record>
+  </data>
+</odoo>`
+    );
+    const items = parseXml(tmp, "sale");
+    unlinkSync(tmp);
+    expect(items).toHaveLength(1);
+    expect(items[0].itemType).toBe("view");
+    expect(items[0].attributes.view_type).toBe("form");
+  });
+
+  test("view_type is absent when type field is missing", () => {
+    const tmp = join(tmpdir(), `view-type-test-${Math.random().toString(36).slice(2)}.xml`);
+    writeFileSync(
+      tmp,
+      `<?xml version="1.0"?>
+<odoo>
+  <data>
+    <record id="my_view_no_type" model="ir.ui.view">
+      <field name="name">My View</field>
+      <field name="model">sale.order</field>
+    </record>
+  </data>
+</odoo>`
+    );
+    const items = parseXml(tmp, "sale");
+    unlinkSync(tmp);
+    expect(items).toHaveLength(1);
+    expect(items[0].attributes.view_type).toBeUndefined();
   });
 });

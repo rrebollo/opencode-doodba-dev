@@ -70,6 +70,11 @@ function handleRecord(
   for (const f of fieldArr) {
     if (f["@_name"]) fields[f["@_name"]] = f["@_ref"] ?? f["#text"] ?? "";
   }
+  // Alias the 'type' field to 'view_type' for ir.ui.view records so MCP tools
+  // can filter by attributes.view_type consistently (the field is named 'type' in XML).
+  if (model === "ir.ui.view" && typeof fields["type"] === "string" && fields["type"]) {
+    fields["view_type"] = fields["type"];
+  }
   return {
     itemType: itemTypeFromModel(model),
     name: xmlId,
