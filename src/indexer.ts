@@ -5,7 +5,11 @@ import { DoodbaIndexDatabase } from "./database";
 import { discoverModules, findCycles, resolveDependencyOrder } from "./dependency-tree";
 import { parseCsv } from "./parsers/csv";
 import { parseManifest } from "./parsers/manifest";
-import { parsePythonAst as parsePython } from "./parsers/python-ast";
+import {
+  parsePythonAst as parsePython,
+  startBatchParser,
+  stopBatchParser,
+} from "./parsers/python-ast";
 import { parseXml } from "./parsers/xml";
 
 // Directories never relevant to code indexing
@@ -79,19 +83,35 @@ const HASH_LENGTH = 16;
 type FileParser = (
   filePath: string,
   module: string
-) => Array<{
-  itemType: string;
-  name: string;
-  parentName: string | null;
-  module: string;
-  attributes: Record<string, unknown>;
-  references?: Array<{
-    filePath: string;
-    lineNumber: number;
-    referenceType: string;
-    context?: string | null;
-  }>;
-}>;
+) =>
+  | Array<{
+      itemType: string;
+      name: string;
+      parentName: string | null;
+      module: string;
+      attributes: Record<string, unknown>;
+      references?: Array<{
+        filePath: string;
+        lineNumber: number;
+        referenceType: string;
+        context?: string | null;
+      }>;
+    }>
+  | Promise<
+      Array<{
+        itemType: string;
+        name: string;
+        parentName: string | null;
+        module: string;
+        attributes: Record<string, unknown>;
+        references?: Array<{
+          filePath: string;
+          lineNumber: number;
+          referenceType: string;
+          context?: string | null;
+        }>;
+      }>
+    >;
 
 interface IndexFilesOptions {
   full: boolean | undefined;
@@ -101,7 +121,11 @@ interface IndexFilesOptions {
   dependencyDepth?: number;
 }
 
-function indexFiles(files: string[], parser: FileParser, opts: IndexFilesOptions): void {
+async function indexFiles(
+  files: string[],
+  parser: FileParser,
+  opts: IndexFilesOptions
+): Promise<void> {
   for (const f of files) {
     const hash = fileHash(f);
     const existing = opts.db.getFileHash(f);
@@ -110,7 +134,7 @@ function indexFiles(files: string[], parser: FileParser, opts: IndexFilesOptions
       continue;
     }
     try {
-      const items = parser(f, opts.mod.name);
+      const items = await Promise.resolve(parser(f, opts.mod.name));
       for (const item of items) {
         const itemId = opts.db.upsertItem(
           item.itemType,
@@ -155,12 +179,12 @@ export interface IndexOptions {
   dbPath?: string;
 }
 
-export function indexModules(opts: IndexOptions): {
+export async function indexModules(opts: IndexOptions): Promise<{
   indexed: number;
   skipped: number;
   errors: number;
   missingDeps: string[];
-} {
+}> {
   if (!opts.dbPath) {
     throw new Error("dbPath is required for indexing Doodba modules");
   }
@@ -169,6 +193,7 @@ export function indexModules(opts: IndexOptions): {
   const counters = { indexed: 0, skipped: 0, errors: 0 };
   const missingDepsSet = new Set<string>();
 
+  await startBatchParser();
   try {
     const allModules = discoverModules(opts.rootPaths);
     const cycleResult = findCycles(allModules);
@@ -199,7 +224,7 @@ export function indexModules(opts: IndexOptions): {
         const files = walkModule(mod.path);
 
         // Python files
-        indexFiles(files.py, parsePython, {
+        await indexFiles(files.py, parsePython, {
           full: opts.full,
           mod,
           db,
@@ -208,10 +233,10 @@ export function indexModules(opts: IndexOptions): {
         });
 
         // XML files
-        indexFiles(files.xml, parseXml, { full: opts.full, mod, db, counters });
+        await indexFiles(files.xml, parseXml, { full: opts.full, mod, db, counters });
 
         // CSV files
-        indexFiles(files.csv, parseCsv, { full: opts.full, mod, db, counters });
+        await indexFiles(files.csv, parseCsv, { full: opts.full, mod, db, counters });
 
         db.commitTransaction();
       } catch (e) {
@@ -221,6 +246,7 @@ export function indexModules(opts: IndexOptions): {
       }
     }
   } finally {
+    await stopBatchParser();
     db.close();
   }
 

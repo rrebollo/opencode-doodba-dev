@@ -33,7 +33,7 @@ describe("cycle detection during indexing", () => {
     rmSync(tmpDir, { recursive: true });
   });
 
-  it("emits a warning when cyclic dependencies are detected", () => {
+  it("emits a warning when cyclic dependencies are detected", async () => {
     const warns: string[] = [];
     const spy = spyOn(console, "warn").mockImplementation((...args) => {
       warns.push(args.join(" "));
@@ -43,7 +43,7 @@ describe("cycle detection during indexing", () => {
     mkdirSync(dbDir, { recursive: true });
     const dbPath = join(dbDir, "index.db");
 
-    indexModules({ rootPaths: [tmpDir], full: true, dbPath });
+    await indexModules({ rootPaths: [tmpDir], full: true, dbPath });
 
     spy.mockRestore();
 
@@ -51,14 +51,14 @@ describe("cycle detection during indexing", () => {
     expect(cycleWarn).toBeDefined();
   });
 
-  it("does not crash when cyclic dependencies exist", () => {
+  it("does not crash when cyclic dependencies exist", async () => {
     const dbDir = join(tmpDir, ".opencode", "doodba-dev2");
     mkdirSync(dbDir, { recursive: true });
     const dbPath = join(dbDir, "index.db");
 
     // Should not throw
-    expect(() => {
-      indexModules({ rootPaths: [tmpDir], full: true, dbPath });
+    await expect(async () => {
+      await indexModules({ rootPaths: [tmpDir], full: true, dbPath });
     }).not.toThrow();
   });
 });
@@ -87,24 +87,24 @@ describe("symlink cycle detection in walkDir", () => {
     rmSync(tmpDir, { recursive: true });
   });
 
-  it("does not crash when a symlink cycle exists in module directory", () => {
+  it("does not crash when a symlink cycle exists in module directory", async () => {
     const dbDir = join(tmpDir, ".opencode", "doodba-dev");
     mkdirSync(dbDir, { recursive: true });
     const dbPath = join(dbDir, "index.db");
 
-    expect(() => {
-      indexModules({ rootPaths: [tmpDir], full: true, dbPath });
+    await expect(async () => {
+      await indexModules({ rootPaths: [tmpDir], full: true, dbPath });
     }).not.toThrow();
   });
 
-  it("skips symlinks without crashing", () => {
+  it("skips symlinks without crashing", async () => {
     const dbDir = join(tmpDir, ".opencode", "doodba-dev2");
     mkdirSync(dbDir, { recursive: true });
     const dbPath = join(dbDir, "index.db");
 
     // Should complete without crashing even with symlinks
-    expect(() => {
-      indexModules({ rootPaths: [tmpDir], full: true, dbPath });
+    await expect(async () => {
+      await indexModules({ rootPaths: [tmpDir], full: true, dbPath });
     }).not.toThrow();
 
     // Verify database was created successfully

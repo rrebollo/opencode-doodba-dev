@@ -28,23 +28,25 @@ if (sourcePaths.length === 0) {
 
 updateState(projectDir, { status: "INDEXING", startedAt: new Date().toISOString(), error: null });
 
-try {
-  const result = indexModules({
-    rootPaths: sourcePaths,
-    full: true,
-    dbPath: getProjectDbPath(projectDir),
-  });
-  updateState(projectDir, {
-    status: "READY",
-    completedAt: new Date().toISOString(),
-    indexedFiles: result.indexed,
-    missingDeps: result.missingDeps,
-    error: null,
-  });
-  process.stdout.write(JSON.stringify(result));
-} catch (err) {
-  const msg = err instanceof Error ? err.message : String(err);
-  updateState(projectDir, { status: "FAILED", error: msg });
-  process.stderr.write(`indexer-worker error: ${msg}\n`);
-  process.exit(1);
-}
+(async () => {
+  try {
+    const result = await indexModules({
+      rootPaths: sourcePaths,
+      full: true,
+      dbPath: getProjectDbPath(projectDir),
+    });
+    updateState(projectDir, {
+      status: "READY",
+      completedAt: new Date().toISOString(),
+      indexedFiles: result.indexed,
+      missingDeps: result.missingDeps,
+      error: null,
+    });
+    process.stdout.write(JSON.stringify(result));
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    updateState(projectDir, { status: "FAILED", error: msg });
+    process.stderr.write(`indexer-worker error: ${msg}\n`);
+    process.exit(1);
+  }
+})();

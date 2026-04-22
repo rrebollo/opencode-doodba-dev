@@ -176,7 +176,7 @@ export const doodbaTools = {
           : undefined;
         const { indexModules } = await import("../indexer");
         const resolved = resolveProjectDir(context.directory);
-        const result = indexModules({
+        const result = await indexModules({
           rootPaths,
           modules,
           full: args.full,

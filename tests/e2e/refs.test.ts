@@ -82,7 +82,7 @@ describe("parsePythonAst", () => {
     rmSync(tmpDir2, { recursive: true });
   });
 
-  it("extracts model, fields, and methods with correct line numbers", () => {
+  it("extracts model, fields, and methods with correct line numbers", async () => {
     const pyFile = join(tmpDir2, "test_model.py");
     writeFileSync(
       pyFile,
@@ -99,7 +99,7 @@ class SaleOrder(models.Model):
         pass
 `
     );
-    const items = parsePythonAst(pyFile, "sale");
+    const items = await parsePythonAst(pyFile, "sale");
     const model = items.find((i) => i.itemType === "model");
     expect(model).toBeDefined();
     expect(model!.name).toBe("sale.order");
@@ -118,7 +118,7 @@ class SaleOrder(models.Model):
     expect(method!.references[0].lineNumber).toBe(10);
   });
 
-  it("handles _inherit-only extension correctly", () => {
+  it("handles _inherit-only extension correctly", async () => {
     const pyFile = join(tmpDir2, "extend.py");
     writeFileSync(
       pyFile,
@@ -130,7 +130,7 @@ class ResPartner(models.Model):
     firstname = fields.Char(string="First Name")
 `
     );
-    const items = parsePythonAst(pyFile, "partner_firstname");
+    const items = await parsePythonAst(pyFile, "partner_firstname");
     const model = items.find((i) => i.itemType === "model");
     expect(model).toBeDefined();
     expect(model!.name).toBe("res.partner");
@@ -141,13 +141,13 @@ class ResPartner(models.Model):
     expect(field!.parentName).toBe("res.partner");
   });
 
-  it("returns [] for nonexistent file", () => {
-    const items = parsePythonAst("/nonexistent/file.py", "base");
+  it("returns [] for nonexistent file", async () => {
+    const items = await parsePythonAst("/nonexistent/file.py", "base");
     // Should return an empty array, not undefined or null
     expect(items).toEqual([]);
   });
 
-  it("handles comodel_name kwarg form", () => {
+  it("handles comodel_name kwarg form", async () => {
     const pyFile = join(tmpDir2, "kwarg_model.py");
     writeFileSync(
       pyFile,
@@ -159,7 +159,7 @@ class MyModel(models.Model):
     partner_id = fields.Many2one(comodel_name="res.partner", string="Partner")
 `
     );
-    const items = parsePythonAst(pyFile, "my_module");
+    const items = await parsePythonAst(pyFile, "my_module");
     const field = items.find((i) => i.name === "partner_id");
     expect(field).toBeDefined();
     const comodelRef = field!.references.find((r) => r.referenceType === "many2one");
@@ -171,9 +171,9 @@ class MyModel(models.Model):
 describe("indexer populates item_references", () => {
   let fixture: TestFixture;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     fixture = createTestFixture();
-    indexModules({ rootPaths: fixture.sourcePaths, full: true, dbPath: fixture.dbPath });
+    await indexModules({ rootPaths: fixture.sourcePaths, full: true, dbPath: fixture.dbPath });
   });
 
   afterEach(() => {

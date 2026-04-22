@@ -32,12 +32,12 @@ class MyModel(models.Model):
     rmSync(tmpDir, { recursive: true });
   });
 
-  it("reports missing dependencies after indexing", () => {
+  it("reports missing dependencies after indexing", async () => {
     const dbDir = join(tmpDir, ".opencode", "doodba-dev");
     mkdirSync(dbDir, { recursive: true });
     const dbPath = join(dbDir, "index.db");
 
-    const result = indexModules({
+    const result = await indexModules({
       rootPaths: [tmpDir],
       full: true,
       dbPath,

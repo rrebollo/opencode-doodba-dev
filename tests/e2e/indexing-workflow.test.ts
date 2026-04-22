@@ -14,8 +14,8 @@ describe("full indexing workflow", () => {
     destroyTestFixture(fixture);
   });
 
-  it("indexes all modules without errors", () => {
-    const result = indexModules({
+  it("indexes all modules without errors", async () => {
+    const result = await indexModules({
       rootPaths: fixture.sourcePaths,
       full: true,
       dbPath: fixture.dbPath,
@@ -27,8 +27,8 @@ describe("full indexing workflow", () => {
     expect(result.indexed).toBeGreaterThanOrEqual(12);
   });
 
-  it("creates queryable database entries", () => {
-    indexModules({
+  it("creates queryable database entries", async () => {
+    await indexModules({
       rootPaths: fixture.sourcePaths,
       full: true,
       dbPath: fixture.dbPath,
@@ -53,8 +53,8 @@ describe("full indexing workflow", () => {
     }
   });
 
-  it("indexes cross-repo dependencies correctly", () => {
-    indexModules({
+  it("indexes cross-repo dependencies correctly", async () => {
+    await indexModules({
       rootPaths: fixture.sourcePaths,
       full: true,
       dbPath: fixture.dbPath,
@@ -74,8 +74,8 @@ describe("full indexing workflow", () => {
     }
   });
 
-  it("indexes multi-class Python files correctly (class-body boundary test)", () => {
-    indexModules({
+  it("indexes multi-class Python files correctly (class-body boundary test)", async () => {
+    await indexModules({
       rootPaths: fixture.sourcePaths,
       full: true,
       dbPath: fixture.dbPath,

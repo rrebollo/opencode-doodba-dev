@@ -8,9 +8,9 @@ import { createTestFixture, destroyTestFixture, type TestFixture } from "./setup
 describe("plugin tool queries", () => {
   let fixture: TestFixture;
 
-  beforeAll(() => {
+  beforeAll(async () => {
     fixture = createTestFixture();
-    indexModules({ rootPaths: fixture.sourcePaths, full: true, dbPath: fixture.dbPath });
+    await indexModules({ rootPaths: fixture.sourcePaths, full: true, dbPath: fixture.dbPath });
   });
 
   afterAll(() => {

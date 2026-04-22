@@ -30,12 +30,12 @@ describe("indexer-worker guard-check logic", () => {
       expect(sourcePaths.some((p) => p.includes("custom-repo"))).toBe(true);
     });
 
-    it("getSourcePaths result is indexable by indexModules", () => {
+    it("getSourcePaths result is indexable by indexModules", async () => {
       // Verify the complete pipeline: getSourcePaths → indexModules
       const sourcePaths = getSourcePaths(fixture.doodbaRoot);
       expect(sourcePaths.length).toBeGreaterThan(0);
 
-      const result = indexModules({
+      const result = await indexModules({
         rootPaths: sourcePaths,
         full: true,
         dbPath: fixture.dbPath,

@@ -14,16 +14,16 @@ describe("re-indexing", () => {
     destroyTestFixture(fixture);
   });
 
-  it("full re-index does not create duplicates", () => {
+  it("full re-index does not create duplicates", async () => {
     // First index
-    indexModules({
+    await indexModules({
       rootPaths: fixture.sourcePaths,
       full: true,
       dbPath: fixture.dbPath,
     });
 
     // Second full index
-    const result2 = indexModules({
+    const result2 = await indexModules({
       rootPaths: fixture.sourcePaths,
       full: true,
       dbPath: fixture.dbPath,
@@ -49,16 +49,16 @@ describe("re-indexing", () => {
     }
   });
 
-  it("incremental index skips unchanged files", () => {
+  it("incremental index skips unchanged files", async () => {
     // Full index
-    indexModules({
+    await indexModules({
       rootPaths: fixture.sourcePaths,
       full: true,
       dbPath: fixture.dbPath,
     });
 
     // Incremental index (no changes)
-    const result = indexModules({
+    const result = await indexModules({
       rootPaths: fixture.sourcePaths,
       full: false,
       dbPath: fixture.dbPath,
