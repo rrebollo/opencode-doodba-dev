@@ -1,8 +1,10 @@
 {
   "name": "opencode-doodba-dev",
   "version": "0.1.0",
+  "description": "OpenCode plugin for Doodba (Odoo) development — provides Odoo source indexing and AI-assisted exploration tools.",
   "type": "module",
   "main": ".opencode/plugins/doodba-dev.js",
+  "license": "MIT",
   "scripts": {
     "test": "bun test"
   },
@@ -13,5 +15,8 @@
     "@opencode-ai/plugin": "^1.14.19",
     "bun-types": "^1.3.12",
     "typescript": "^5.5.0"
+  },
+  "engines": {
+    "bun": ">=1.0.0"
   }
 }
