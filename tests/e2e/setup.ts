@@ -1,6 +1,7 @@
 import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { getSourcePaths } from "../../src/doodba-detector";
 
 export interface TestFixture {
   rootDir: string;
@@ -248,7 +249,7 @@ class PartnerCategoryHelper(models.TransientModel):
   return {
     rootDir,
     doodbaRoot,
-    sourcePaths: [odooRepo, customRepo],
+    sourcePaths: getSourcePaths(doodbaRoot),
     dbPath,
   };
 }
