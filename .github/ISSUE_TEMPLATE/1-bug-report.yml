@@ -1,0 +1,63 @@
+name: "\U0001F41B Bug Report"
+description: Report a bug or unexpected behavior
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Please fill in as much detail as possible. Issues without reproduction steps may be closed.
+
+  - type: input
+    attributes:
+      label: Plugin version
+      description: Run `cat node_modules/opencode-doodba-dev/package.json | grep version` or check your install.
+      placeholder: "0.1.0"
+    validations:
+      required: true
+
+  - type: input
+    attributes:
+      label: Bun version
+      description: Output of `bun --version`
+      placeholder: "1.3.11"
+    validations:
+      required: true
+
+  - type: input
+    attributes:
+      label: OpenCode version
+      description: Output of `opencode --version` (if known)
+      placeholder: "e.g. 0.1.x"
+
+  - type: textarea
+    attributes:
+      label: What happened?
+      description: Describe the bug clearly.
+    validations:
+      required: true
+
+  - type: textarea
+    attributes:
+      label: Steps to reproduce
+      description: Minimal steps to trigger the bug. Include a code snippet or command if possible.
+      placeholder: |
+        1. Open OpenCode in a Doodba project
+        2. Run `/doodba-search …`
+        3. See error
+    validations:
+      required: true
+
+  - type: textarea
+    attributes:
+      label: Expected behavior
+      description: What should have happened?
+
+  - type: textarea
+    attributes:
+      label: Actual behavior / error output
+      description: Paste the actual output or error message.
+
+  - type: textarea
+    attributes:
+      label: Additional context
+      description: OS, any relevant environment details, or related issues.

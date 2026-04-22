@@ -1,0 +1,22 @@
+name: "\U0001F680 Feature Request"
+description: Suggest an idea or enhancement
+labels: [enhancement]
+body:
+  - type: textarea
+    attributes:
+      label: What problem does this solve?
+      description: Describe the problem or limitation you are running into.
+    validations:
+      required: true
+
+  - type: textarea
+    attributes:
+      label: Proposed solution
+      description: What would you like to happen? Include examples if helpful.
+    validations:
+      required: true
+
+  - type: textarea
+    attributes:
+      label: Alternatives considered
+      description: Are there workarounds you have tried?
