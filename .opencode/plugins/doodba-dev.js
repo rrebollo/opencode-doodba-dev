@@ -51,7 +51,7 @@ function loadMarkdownDir(dir, transform) {
         const { frontmatter, body } = parseFrontmatter(raw)
         result[file.slice(0, -3)] = transform(frontmatter, body)
       } catch (e) {
-        console.warn(`[doodba-dev] Failed to load ${dir}/${file}:`, e.message)
+        console.warn(`[doodba-dev] Failed to load ${path.join(dir, file)}:`, e.message)
       }
     }
   } catch (e) {
@@ -126,6 +126,12 @@ export const DoodbaDevPlugin = async ({ directory }) => {
     const agent = { description: fm.description || '', mode: fm.mode || 'subagent', prompt: body }
     if (fm.model) agent.model = fm.model
     if (fm.temperature) agent.temperature = parseFloat(fm.temperature)
+    if (fm.tools) {
+      try { agent.tools = JSON.parse(fm.tools) } catch {}
+    }
+    if (fm.permission) {
+      try { agent.permission = JSON.parse(fm.permission) } catch {}
+    }
     if (fm.hidden === 'true') agent.hidden = true
     if (fm.color) agent.color = fm.color
     return agent
