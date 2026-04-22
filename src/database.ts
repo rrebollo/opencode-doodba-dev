@@ -5,6 +5,29 @@ import { dirname } from "node:path"
 // Schema is backward compatible with the Python odoo-indexer CLI (aiosqlite version).
 // Column names and types are intentionally identical to support existing user databases.
 
+const DEFAULT_SEARCH_LIMIT = 50
+
+interface RawIndexedItemRow {
+  id: number
+  item_type: string
+  name: string
+  parent_name: string | null
+  module: string
+  attributes: string | null
+  dependency_depth: number
+}
+
+interface RawReferenceRow {
+  id: number
+  item_id: number
+  file_path: string
+  line_number: number
+  reference_type: string
+  context: string | null
+}
+
+const INDEXED_ITEM_COLUMNS = "id, item_type, name, parent_name, module, attributes, dependency_depth"
+
 export interface IndexedItem {
   id: number
   itemType: string
@@ -15,12 +38,44 @@ export interface IndexedItem {
   dependencyDepth: number
 }
 
+export interface ItemReference {
+  id: number
+  itemId: number
+  filePath: string
+  lineNumber: number
+  referenceType: string
+  context: string | null
+}
+
 export interface SearchOptions {
   query?: string
   itemType?: string
   parentName?: string
   module?: string
   limit?: number
+}
+
+function mapRow(r: RawIndexedItemRow): IndexedItem {
+  return {
+    id: r.id,
+    itemType: r.item_type,
+    name: r.name,
+    parentName: r.parent_name,
+    module: r.module,
+    attributes: r.attributes ? JSON.parse(r.attributes) : {},
+    dependencyDepth: r.dependency_depth,
+  }
+}
+
+function mapReferenceRow(r: RawReferenceRow): ItemReference {
+  return {
+    id: r.id,
+    itemId: r.item_id,
+    filePath: r.file_path,
+    lineNumber: r.line_number,
+    referenceType: r.reference_type,
+    context: r.context,
+  }
 }
 
 export class DoodbaIndexDatabase {
@@ -98,20 +153,11 @@ export class DoodbaIndexDatabase {
        ON CONFLICT(item_type, name, parent_name, module) DO UPDATE SET attributes=excluded.attributes, dependency_depth=excluded.dependency_depth`,
       [itemType, name, parentName, module, attrsJson, dependencyDepth],
     )
-    let row: any
-    if (parentName === null) {
-      row = this.db
-        .query<{ id: number }, any[]>(
-          "SELECT id FROM indexed_items WHERE item_type=? AND name=? AND parent_name IS NULL AND module=?",
-        )
-        .get(itemType, name, module)
-    } else {
-      row = this.db
-        .query<{ id: number }, any[]>(
-          "SELECT id FROM indexed_items WHERE item_type=? AND name=? AND parent_name=? AND module=?",
-        )
-        .get(itemType, name, parentName, module)
-    }
+    const row = this.db
+      .query<{ id: number }, any[]>(
+        "SELECT id FROM indexed_items WHERE item_type=? AND name=? AND parent_name IS ? AND module=?",
+      )
+      .get(itemType, name, parentName, module)
     return row?.id ?? 0
   }
 
@@ -148,34 +194,18 @@ export class DoodbaIndexDatabase {
       params.push(opts.module)
     }
     const where = conditions.length ? `WHERE ${conditions.join(" AND ")}` : ""
-    const limit = opts.limit ?? 50
-    const query = `SELECT * FROM indexed_items ${where} LIMIT ${limit}`
-    const rows = this.db.query<any, any[]>(query).all(...params)
-    return rows.map((r) => ({
-      id: r.id,
-      itemType: r.item_type,
-      name: r.name,
-      parentName: r.parent_name,
-      module: r.module,
-      attributes: r.attributes ? JSON.parse(r.attributes) : {},
-      dependencyDepth: r.dependency_depth,
-    }))
+    const limit = opts.limit ?? DEFAULT_SEARCH_LIMIT
+    const query = `SELECT ${INDEXED_ITEM_COLUMNS} FROM indexed_items ${where} LIMIT ${limit}`
+    const rows = this.db.query<RawIndexedItemRow, any[]>(query).all(...params)
+    return rows.map(mapRow)
   }
 
   getDetails(name: string, itemType: string): IndexedItem | null {
     const row = this.db
-      .query<any, any[]>("SELECT * FROM indexed_items WHERE name=? AND item_type=? LIMIT 1")
+      .query<RawIndexedItemRow, any[]>(`SELECT ${INDEXED_ITEM_COLUMNS} FROM indexed_items WHERE name=? AND item_type=? LIMIT 1`)
       .get(name, itemType)
     if (!row) return null
-    return {
-      id: row.id,
-      itemType: row.item_type,
-      name: row.name,
-      parentName: row.parent_name,
-      module: row.module,
-      attributes: row.attributes ? JSON.parse(row.attributes) : {},
-      dependencyDepth: row.dependency_depth,
-    }
+    return mapRow(row)
   }
 
   listModules(): string[] {
@@ -194,12 +224,13 @@ export class DoodbaIndexDatabase {
     return Object.fromEntries(rows.map((r) => [r.item_type, r.cnt]))
   }
 
-  findRefs(name: string, itemType: string): any[] {
-    return this.db
-      .query<any, any[]>(
-        "SELECT r.* FROM item_references r JOIN indexed_items i ON r.item_id=i.id WHERE i.name=? AND i.item_type=?",
+  findRefs(name: string, itemType: string): ItemReference[] {
+    const rows = this.db
+      .query<RawReferenceRow, any[]>(
+        "SELECT r.id, r.item_id, r.file_path, r.line_number, r.reference_type, r.context FROM item_references r JOIN indexed_items i ON r.item_id=i.id WHERE i.name=? AND i.item_type=?",
       )
       .all(name, itemType)
+    return rows.map(mapReferenceRow)
   }
 
   searchByAttr(
@@ -208,7 +239,7 @@ export class DoodbaIndexDatabase {
     module?: string,
     limit = 50,
   ): IndexedItem[] {
-    let sql = "SELECT * FROM indexed_items WHERE item_type = ?"
+    let sql = `SELECT ${INDEXED_ITEM_COLUMNS} FROM indexed_items WHERE item_type = ?`
     const params: any[] = [itemType]
 
     if (module) {
@@ -218,34 +249,20 @@ export class DoodbaIndexDatabase {
 
     for (const [key, value] of Object.entries(filters)) {
       const jsonPath = `$.${key}`
-      if (typeof value === "boolean") {
-        // SQLite's json_extract on a JSON boolean (true/false) returns integer 1/0, not
-        // a SQL boolean or string. This matches both TypeScript (JSON.stringify) and Python
-        // (json.dumps) stored data, since both serialize booleans as JSON true/false literals
-        // which SQLite's JSON functions represent as integers.
-        sql += " AND json_extract(attributes, ?) = ?"
-        const sqliteBool = value ? 1 : 0
-        params.push(jsonPath, sqliteBool)
-      } else {
-        sql += " AND json_extract(attributes, ?) = ?"
-        const paramValue = typeof value === "string" ? value : JSON.stringify(value)
-        params.push(jsonPath, paramValue)
-      }
+      // SQLite's json_extract on a JSON boolean (true/false) returns integer 1/0, not
+      // a SQL boolean or string. This matches both TypeScript (JSON.stringify) and Python
+      // (json.dumps) stored data, since both serialize booleans as JSON true/false literals
+      // which SQLite's JSON functions represent as integers.
+      sql += " AND json_extract(attributes, ?) = ?"
+      const paramValue = typeof value === "boolean" ? (value ? 1 : 0) : typeof value === "string" ? value : JSON.stringify(value)
+      params.push(jsonPath, paramValue)
     }
 
     sql += " LIMIT ?"
     params.push(limit)
 
-    const rows = this.db.query<any, any[]>(sql).all(...params)
-    return rows.map((row) => ({
-      id: row.id,
-      itemType: row.item_type,
-      name: row.name,
-      parentName: row.parent_name,
-      module: row.module,
-      attributes: row.attributes ? JSON.parse(row.attributes) : {},
-      dependencyDepth: row.dependency_depth,
-    }))
+    const rows = this.db.query<RawIndexedItemRow, any[]>(sql).all(...params)
+    return rows.map(mapRow)
   }
 
   searchXmlId(query: string, module?: string, limit = 50): IndexedItem[] {
@@ -288,6 +305,18 @@ export class DoodbaIndexDatabase {
         )
         .get()?.last_indexed ?? null
     return { totalItems: total, totalModules: modules, lastIndexed: lastIdx }
+  }
+
+  withTransaction<T>(fn: () => T): T {
+    this.db.run("BEGIN")
+    try {
+      const result = fn()
+      this.db.run("COMMIT")
+      return result
+    } catch (error) {
+      this.db.run("ROLLBACK")
+      throw error
+    }
   }
 
   close(): void {

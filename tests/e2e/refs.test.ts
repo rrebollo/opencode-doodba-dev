@@ -29,9 +29,9 @@ describe("item_references", () => {
 
     const refs = db.findRefs("res.partner", "model")
     expect(refs.length).toBe(1)
-    expect(refs[0].file_path).toBe("/some/file.py")
-    expect(refs[0].line_number).toBe(42)
-    expect(refs[0].reference_type).toBe("definition")
+    expect(refs[0].filePath).toBe("/some/file.py")
+    expect(refs[0].lineNumber).toBe(42)
+    expect(refs[0].referenceType).toBe("definition")
     expect(refs[0].context).toBe("class ResPartner")
   })
 
@@ -51,7 +51,7 @@ describe("item_references", () => {
 
     const refs = db.findRefs("sale.order", "model")
     expect(refs.length).toBe(2)
-    const types = refs.map((r) => r.reference_type).sort()
+    const types = refs.map((r) => r.referenceType).sort()
     expect(types).toEqual(["definition", "many2one"])
   })
 
@@ -170,9 +170,9 @@ describe("indexer populates item_references", () => {
     try {
       const refs = db.findRefs("res.partner", "model")
       expect(refs.length).toBeGreaterThan(0)
-      const defRef = refs.find((r: any) => r.reference_type === "definition")
+      const defRef = refs.find((r: any) => r.referenceType === "definition")
       expect(defRef).toBeDefined()
-      expect(defRef!.file_path).toContain("res_partner.py")
+      expect(defRef!.filePath).toContain("res_partner.py")
     } finally {
       db.close()
     }
@@ -182,7 +182,7 @@ describe("indexer populates item_references", () => {
     const db = new DoodbaIndexDatabase(fixture.dbPath)
     try {
       const refs = db.findRefs("res.partner", "model")
-      const inheritRef = refs.find((r: any) => r.reference_type === "inheritance")
+      const inheritRef = refs.find((r: any) => r.referenceType === "inheritance")
       expect(inheritRef).toBeDefined()
     } finally {
       db.close()

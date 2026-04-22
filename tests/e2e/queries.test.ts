@@ -103,10 +103,10 @@ describe("plugin tool queries", () => {
        expect(refs.length).toBeGreaterThan(0)
        // Every ref must have required fields
        for (const ref of refs) {
-         expect(ref.file_path).toBeTruthy()
-         expect(typeof ref.file_path).toBe("string")
-         expect(typeof ref.line_number).toBe("number")
-         expect(typeof ref.reference_type).toBe("string")
+         expect(ref.filePath).toBeTruthy()
+         expect(typeof ref.filePath).toBe("string")
+         expect(typeof ref.lineNumber).toBe("number")
+         expect(typeof ref.referenceType).toBe("string")
        }
      } finally {
        db.close()
