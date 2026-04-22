@@ -22,7 +22,8 @@ const sourcePaths = extraPaths.length > 0 ? extraPaths : getSourcePaths(doodbaRo
 if (sourcePaths.length === 0) {
   updateState(projectDir, { status: "FAILED", error: "No source paths found in odoo/custom/src/" })
   process.stdout.write(JSON.stringify({ error: "No source paths" }))
-  process.exit(0)
+  process.stderr.write("indexer-worker: no Odoo module directories found under odoo/custom/src/\n")
+  process.exit(1)
 }
 
 updateState(projectDir, { status: "INDEXING", startedAt: new Date().toISOString(), error: null })
