@@ -23,8 +23,8 @@ describe("full indexing workflow", () => {
 
     expect(result.errors).toBe(0)
     expect(result.indexed).toBeGreaterThan(0)
-    // Should have indexed: base(3) + sale(3) + partner_firstname(1) + my_module(3)
-    expect(result.indexed).toBeGreaterThanOrEqual(4)
+    // Should have indexed: base(3) + sale(3) + partner_firstname(1) + my_module(3) + partner_category(2)
+    expect(result.indexed).toBeGreaterThanOrEqual(12)
   })
 
   it("creates queryable database entries", () => {
@@ -69,6 +69,40 @@ describe("full indexing workflow", () => {
       // my_module's field referencing sale.order should exist
       const fields = db.search({ query: "order_id", itemType: "field", parentName: "my.model" })
       expect(fields.length).toBeGreaterThan(0)
+    } finally {
+      db.close()
+    }
+  })
+
+  it("indexes multi-class Python files correctly (class-body boundary test)", () => {
+    indexModules({
+      rootPaths: fixture.sourcePaths,
+      full: true,
+      dbPath: fixture.dbPath,
+    })
+
+    const db = new DoodbaIndexDatabase(fixture.dbPath)
+    try {
+      // First class: ResPartnerCategory
+      const categoryModels = db.search({ query: "res.partner.category", itemType: "model" })
+      expect(categoryModels.length).toBeGreaterThan(0)
+      expect(categoryModels.some((m) => m.name === "res.partner.category")).toBe(true)
+
+      // Second class: PartnerCategoryHelper (transient model in same file)
+      const helperModels = db.search({ query: "partner.category.helper", itemType: "model" })
+      expect(helperModels.length).toBeGreaterThan(0)
+      expect(helperModels.some((m) => m.name === "partner.category.helper")).toBe(true)
+
+      // Verify fields are correctly assigned to their respective classes
+      const categoryFields = db.search({ query: "color", itemType: "field", parentName: "res.partner.category" })
+      expect(categoryFields.length).toBeGreaterThan(0)
+
+      const helperFields = db.search({ query: "category_id", itemType: "field", parentName: "partner.category.helper" })
+      expect(helperFields.length).toBeGreaterThan(0)
+
+      // Verify the many2many field is indexed
+      const manyToManyFields = db.search({ query: "partner_ids", itemType: "field", parentName: "partner.category.helper" })
+      expect(manyToManyFields.length).toBeGreaterThan(0)
     } finally {
       db.close()
     }

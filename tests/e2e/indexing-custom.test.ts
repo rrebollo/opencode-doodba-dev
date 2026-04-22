@@ -25,12 +25,13 @@ describe("indexing - custom addons", () => {
     expect(modules.get("my_module")?.depends).toEqual(["sale", "partner_firstname"])
   })
 
-  it("includes all 4 modules from both repos", () => {
+  it("includes all 5 modules from both repos", () => {
     const modules = discoverModules(fixture.sourcePaths)
-    expect(modules.size).toBe(4)
+    expect(modules.size).toBe(5)
     expect(Array.from(modules.keys()).sort()).toEqual([
       "base",
       "my_module",
+      "partner_category",
       "partner_firstname",
       "sale",
     ])
