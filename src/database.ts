@@ -100,6 +100,10 @@ function mapReferenceRow(r: RawReferenceRow): ItemReference {
 
 export class DoodbaIndexDatabase {
   private db: Database;
+  private stmtUpsertItem: ReturnType<Database["query"]>;
+  private stmtUpsertRef: ReturnType<Database["query"]>;
+  private stmtUpsertFileMeta: ReturnType<Database["query"]>;
+  private stmtGetFileHash: ReturnType<Database["query"]>;
 
   constructor(dbPath: string) {
     mkdirSync(dirname(dbPath), { recursive: true });
@@ -107,6 +111,31 @@ export class DoodbaIndexDatabase {
     this.db.run("PRAGMA journal_mode = WAL");
     this.db.run("PRAGMA foreign_keys = ON");
     this.initSchema();
+
+    this.stmtUpsertItem = this.db.query(
+      `INSERT INTO indexed_items (item_type, name, parent_name, module, attributes, dependency_depth)
+       VALUES (?, ?, ?, ?, ?, ?)
+       ON CONFLICT(item_type, name, parent_name, module) DO UPDATE SET
+         attributes=excluded.attributes,
+         dependency_depth=excluded.dependency_depth
+       RETURNING id`
+    );
+
+    this.stmtUpsertRef = this.db.query(
+      `INSERT OR IGNORE INTO item_references
+       (item_id, file_path, line_number, reference_type, context)
+       VALUES (?, ?, ?, ?, ?)`
+    );
+
+    this.stmtUpsertFileMeta = this.db.query(
+      `INSERT INTO file_metadata (file_path, module, file_hash)
+       VALUES (?, ?, ?)
+       ON CONFLICT(file_path) DO UPDATE SET
+         file_hash=excluded.file_hash,
+         last_indexed=CURRENT_TIMESTAMP`
+    );
+
+    this.stmtGetFileHash = this.db.query(`SELECT file_hash FROM file_metadata WHERE file_path=?`);
   }
 
   private initSchema(): void {
@@ -167,19 +196,15 @@ export class DoodbaIndexDatabase {
     dependencyDepth = 0
   ): number {
     const attrsJson = JSON.stringify(attributes);
-    this.db.run(
-      `INSERT INTO indexed_items (item_type, name, parent_name, module, attributes, dependency_depth)
-       VALUES (?, ?, ?, ?, ?, ?)
-       ON CONFLICT(item_type, name, parent_name, module) DO UPDATE SET attributes=excluded.attributes, dependency_depth=excluded.dependency_depth`,
-      [itemType, name, parentName, module, attrsJson, dependencyDepth]
-    );
-    const row = this.db
-      .query<
-        { id: number },
-        SQLQueryBindings[]
-      >("SELECT id FROM indexed_items WHERE item_type=? AND name=? AND parent_name IS ? AND module=?")
-      .get(itemType, name, parentName, module);
-    return row?.id ?? 0;
+    const row = this.stmtUpsertItem.get(
+      itemType,
+      name,
+      parentName,
+      module,
+      attrsJson,
+      dependencyDepth
+    ) as { id: number };
+    return row.id;
   }
 
   upsertReference(
@@ -189,10 +214,7 @@ export class DoodbaIndexDatabase {
     referenceType: string,
     context: string | null
   ): void {
-    this.db.run(
-      "INSERT OR IGNORE INTO item_references (item_id, file_path, line_number, reference_type, context) VALUES (?, ?, ?, ?, ?)",
-      [itemId, filePath, lineNumber, referenceType, context]
-    );
+    this.stmtUpsertRef.run(itemId, filePath, lineNumber, referenceType, context);
   }
 
   search(opts: SearchOptions): IndexedItem[] {
@@ -315,19 +337,11 @@ export class DoodbaIndexDatabase {
   }
 
   upsertFileMetadata(filePath: string, module: string, fileHash: string): void {
-    this.db.run(
-      "INSERT INTO file_metadata (file_path, module, file_hash) VALUES (?, ?, ?) ON CONFLICT(file_path) DO UPDATE SET file_hash=excluded.file_hash, last_indexed=CURRENT_TIMESTAMP",
-      [filePath, module, fileHash]
-    );
+    this.stmtUpsertFileMeta.run(filePath, module, fileHash);
   }
 
   getFileHash(filePath: string): string | null {
-    const row = this.db
-      .query<
-        { file_hash: string },
-        [string]
-      >("SELECT file_hash FROM file_metadata WHERE file_path=?")
-      .get(filePath);
+    const row = this.stmtGetFileHash.get(filePath) as { file_hash: string } | undefined;
     return row?.file_hash ?? null;
   }
 
