@@ -258,14 +258,25 @@ def _extract_method_items(node, effective_name, file_path, module_name):
     return items
 
 
-def parse_file(file_path, module_name):
+def parse_code(code, file_path, module_name):
+    """Parse Python code and extract Odoo items (shared between CLI and batch processor).
+    
+    Args:
+        code: Python source code as string
+        file_path: Path to file (used in metadata, doesn't need to exist)
+        module_name: Odoo module name
+    
+    Returns:
+        List of item dicts
+    
+    Raises:
+        ValueError: If code cannot be parsed
+    """
     items = []
     try:
-        source = Path(file_path).read_text(encoding='utf-8')
-        tree = ast.parse(source, filename=file_path)
+        tree = ast.parse(code, filename=file_path)
     except Exception as e:
-        print(f"[python_ast_extract] Error parsing {file_path}: {e}", file=sys.stderr)
-        return []
+        raise ValueError(f"Error parsing {file_path}: {e}")
 
     # Only process top-level classes to avoid false positives from nested classes
     for node in tree.body:
@@ -300,6 +311,24 @@ def parse_file(file_path, module_name):
         items.extend(method_items)
 
     return items
+
+
+def parse_file(file_path, module_name):
+    """Read file from disk and parse (backward compatibility wrapper for CLI).
+    
+    Args:
+        file_path: Path to Python file
+        module_name: Odoo module name
+    
+    Returns:
+        List of item dicts (empty list on error)
+    """
+    try:
+        source = Path(file_path).read_text(encoding='utf-8')
+        return parse_code(source, file_path, module_name)
+    except Exception as e:
+        print(f"[python_ast_extract] Error parsing {file_path}: {e}", file=sys.stderr)
+        return []
 
 
 if __name__ == '__main__':
