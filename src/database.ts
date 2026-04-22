@@ -172,6 +172,34 @@ export class DoodbaIndexDatabase {
         last_indexed TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )
     `);
+    // Create FTS5 virtual table for fast full-text search
+    this.db.run(
+      `CREATE VIRTUAL TABLE IF NOT EXISTS indexed_items_fts 
+       USING fts5(name, item_type, module, parent_name, attributes, content=indexed_items, content_rowid=id)`
+    );
+
+    // Triggers to keep FTS5 index in sync with indexed_items table
+    this.db.run(
+      `CREATE TRIGGER IF NOT EXISTS indexed_items_ai AFTER INSERT ON indexed_items BEGIN
+         INSERT INTO indexed_items_fts(rowid, name, item_type, module, parent_name, attributes)
+         VALUES (new.id, new.name, new.item_type, new.module, new.parent_name, new.attributes);
+       END`
+    );
+
+    this.db.run(
+      `CREATE TRIGGER IF NOT EXISTS indexed_items_ad AFTER DELETE ON indexed_items BEGIN
+         DELETE FROM indexed_items_fts WHERE rowid = old.id;
+       END`
+    );
+
+    this.db.run(
+      `CREATE TRIGGER IF NOT EXISTS indexed_items_au AFTER UPDATE ON indexed_items BEGIN
+         UPDATE indexed_items_fts SET name=new.name, item_type=new.item_type, module=new.module,
+           parent_name=new.parent_name, attributes=new.attributes
+         WHERE rowid = new.id;
+       END`
+    );
+
     for (const idx of [
       "CREATE INDEX IF NOT EXISTS idx_item_type ON indexed_items(item_type)",
       "CREATE INDEX IF NOT EXISTS idx_item_name ON indexed_items(name)",
@@ -249,6 +277,37 @@ export class DoodbaIndexDatabase {
     }
     const query = `SELECT ${INDEXED_ITEM_COLUMNS} FROM indexed_items ${where} LIMIT ${limit}`;
     const rows = this.db.query<RawIndexedItemRow, SQLQueryBindings[]>(query).all(...params);
+    return rows.map(mapRow);
+  }
+
+  searchItems(
+    query: string,
+    options?: { itemType?: string; module?: string; limit?: number }
+  ): IndexedItem[] {
+    let sql = `
+      SELECT DISTINCT ${INDEXED_ITEM_COLUMNS}
+      FROM indexed_items i
+      WHERE i.id IN (
+        SELECT rowid FROM indexed_items_fts WHERE indexed_items_fts MATCH ?
+      )
+    `;
+    const params: SQLQueryBindings[] = [query];
+
+    if (options?.itemType) {
+      sql += ` AND i.item_type = ?`;
+      params.push(options.itemType);
+    }
+
+    if (options?.module) {
+      sql += ` AND i.module = ?`;
+      params.push(options.module);
+    }
+
+    const limit = options?.limit ?? DEFAULT_SEARCH_LIMIT;
+    sql += ` LIMIT ?`;
+    params.push(limit);
+
+    const rows = this.db.query<RawIndexedItemRow, SQLQueryBindings[]>(sql).all(...params);
     return rows.map(mapRow);
   }
 
