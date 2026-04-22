@@ -520,6 +520,21 @@ export class DoodbaIndexDatabase {
     this.db.close();
   }
 
+  /**
+   * Returns true if the database is missing the parent_name_key generated column
+   * introduced to fix NULL uniqueness. Callers should wipe the DB file and reset
+   * state to PENDING so the provisioner re-indexes automatically.
+   */
+  needsMigration(): boolean {
+    const row = this.db
+      .query<
+        { count: number },
+        []
+      >(`SELECT COUNT(*) as count FROM pragma_table_info('indexed_items') WHERE name='parent_name_key'`)
+      .get();
+    return (row?.count ?? 0) === 0;
+  }
+
   beginTransaction(): void {
     this.db.run("BEGIN");
   }

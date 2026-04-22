@@ -1,9 +1,10 @@
 import { type ToolResult } from "@opencode-ai/plugin";
+import { existsSync, unlinkSync } from "node:fs";
 import { homedir } from "node:os";
 import { DoodbaIndexDatabase } from "../database";
 import { globalDatabaseCache } from "../database-cache";
 import { findDoodbaRoot } from "../doodba-detector";
-import { getProjectDbPath, readState, type IndexerState } from "../project-state";
+import { getProjectDbPath, readState, updateState, type IndexerState } from "../project-state";
 
 export const ENTITY_TYPES = ["model", "field", "view", "method", "menuitem", "xml_id"] as const;
 
@@ -63,6 +64,29 @@ export async function withDbAsync<T>(
   if (!db) {
     // Cache miss: create new connection
     db = new DoodbaIndexDatabase(dbPath);
+
+    // Check if migration is needed
+    if (db.needsMigration()) {
+      console.warn(
+        "[doodba-dev] Stale schema detected — wiping index.db and resetting state to PENDING"
+      );
+      // Close the old DB
+      db.close();
+      // Delete the DB file if it exists
+      if (existsSync(dbPath)) {
+        unlinkSync(dbPath);
+      }
+      // Reset state to PENDING so provisioner re-indexes automatically
+      updateState(projectDir, {
+        status: "PENDING",
+        error: null,
+        indexedFiles: 0,
+      });
+      // Clear cache and create fresh DB
+      globalDatabaseCache.delete(dbPath);
+      db = new DoodbaIndexDatabase(dbPath);
+    }
+
     globalDatabaseCache.set(dbPath, db);
   }
   // Use connection
