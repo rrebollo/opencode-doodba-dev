@@ -18,6 +18,9 @@ import { fileURLToPath } from 'url'
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const packageRoot = path.resolve(__dirname, '../..')
 
+/** Maximum age (ms) of an INDEXING state before it is considered stuck and restarted. */
+const STUCK_INDEXER_TIMEOUT_MS = 30 * 60 * 1000
+
 /**
  * Parse YAML frontmatter from markdown content.
  * Returns { frontmatter: Record<string,string>, body: string }.
@@ -80,6 +83,9 @@ function spawnIndexing(projectDir, doodbaRootPath, sourcePaths) {
  * Triggers auto-indexing on plugin load when in a Doodba project.
  */
 export const DoodbaDevPlugin = async ({ directory }) => {
+  // NOTE: These imports use Bun's runtime TypeScript transpilation.
+  // This plugin REQUIRES Bun as the JavaScript runtime — Node.js is not supported.
+  // If you see "Cannot find module" errors here, ensure OpenCode is running under Bun.
   const [
     { doodbaTools },
     { findDoodbaRoot, getSourcePaths },
@@ -101,7 +107,7 @@ export const DoodbaDevPlugin = async ({ directory }) => {
   const state = readState(doodbaRoot)
   if (state.status === 'INDEXING' && state.startedAt) {
     const stuckMs = Date.now() - new Date(state.startedAt).getTime()
-    if (stuckMs > 30 * 60 * 1000) {
+    if (stuckMs > STUCK_INDEXER_TIMEOUT_MS) {
       // Stuck > 30 min — restart
       spawnIndexing(doodbaRoot, doodbaRoot, getSourcePaths(doodbaRoot))
     }
@@ -127,10 +133,10 @@ export const DoodbaDevPlugin = async ({ directory }) => {
     if (fm.model) agent.model = fm.model
     if (fm.temperature) agent.temperature = parseFloat(fm.temperature)
     if (fm.tools) {
-      try { agent.tools = JSON.parse(fm.tools) } catch {}
+      try { agent.tools = JSON.parse(fm.tools) } catch (e) { console.warn('[doodba-dev] Invalid JSON in frontmatter field "tools":', e.message) }
     }
     if (fm.permission) {
-      try { agent.permission = JSON.parse(fm.permission) } catch {}
+      try { agent.permission = JSON.parse(fm.permission) } catch (e) { console.warn('[doodba-dev] Invalid JSON in frontmatter field "permission":', e.message) }
     }
     if (fm.hidden === 'true') agent.hidden = true
     if (fm.color) agent.color = fm.color
