@@ -44,14 +44,21 @@ describe("getSourcePaths", () => {
     expect(paths.every((p) => !p.includes("/.git"))).toBe(true);
   });
 
-  test("only returns directories containing __manifest__.py", () => {
+  test("returns all non-hidden directories (regardless of __manifest__.py)", () => {
     const root = join(TMP, "doodba2");
     const srcDir = join(root, "odoo", "custom", "src");
-    mkdirSync(join(srcDir, "real_module"), { recursive: true });
-    writeFileSync(join(srcDir, "real_module", "__manifest__.py"), "");
-    mkdirSync(join(srcDir, "not_a_module"), { recursive: true });
+    mkdirSync(join(srcDir, "with_manifest"), { recursive: true });
+    writeFileSync(join(srcDir, "with_manifest", "__manifest__.py"), "");
+    mkdirSync(join(srcDir, "without_manifest"), { recursive: true }); // repo group dir
     const paths = getSourcePaths(root);
-    expect(paths).toHaveLength(1);
-    expect(paths[0]).toContain("real_module");
+    expect(paths).toHaveLength(2);
+    expect(paths.some((p) => p.endsWith("with_manifest"))).toBe(true);
+    expect(paths.some((p) => p.endsWith("without_manifest"))).toBe(true);
+  });
+
+  test("returns empty array when odoo/custom/src does not exist", () => {
+    const root = join(TMP, "doodba3"); // no src dir
+    mkdirSync(root, { recursive: true });
+    expect(getSourcePaths(root)).toEqual([]);
   });
 });
