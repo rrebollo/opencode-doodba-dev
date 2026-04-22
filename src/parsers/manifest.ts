@@ -8,25 +8,20 @@ export interface ManifestInfo {
   license: string
 }
 
+function extractStringField(src: string, key: string): string | undefined {
+  let m = new RegExp(`"${key}"\\s*:\\s*"([^"]*)"`).exec(src)
+  return m?.[1] ?? new RegExp(`'${key}'\\s*:\\s*'([^']*)'`).exec(src)?.[1]
+}
+
 export function parseManifest(filePath: string, module: string): ManifestInfo {
   try {
     const src = readFileSync(filePath, "utf-8")
 
-    // Extract name (handle both single and double quotes)
-    let m = /"name"\s*:\s*"([^"]*)"/.exec(src)
-    const name = m?.[1] ?? /'name'\s*:\s*'([^']*)'/.exec(src)?.[1] ?? module
-
-    // Extract version
-    m = /"version"\s*:\s*"([^"]*)"/.exec(src)
-    const version = m?.[1] ?? /'version'\s*:\s*'([^']*)'/.exec(src)?.[1] ?? ""
-
-    // Extract author
-    m = /"author"\s*:\s*"([^"]*)"/.exec(src)
-    const author = m?.[1] ?? /'author'\s*:\s*'([^']*)'/.exec(src)?.[1] ?? ""
-
-    // Extract license
-    m = /"license"\s*:\s*"([^"]*)"/.exec(src)
-    const license_ = m?.[1] ?? /'license'\s*:\s*'([^']*)'/.exec(src)?.[1] ?? ""
+    // Extract name, version, author, license (handle both single and double quotes)
+    const name = extractStringField(src, "name") ?? module
+    const version = extractStringField(src, "version") ?? ""
+    const author = extractStringField(src, "author") ?? ""
+    const license = extractStringField(src, "license") ?? ""
 
     // Extract depends list using balanced-bracket scanner
     let dependsRaw = ""
@@ -45,8 +40,9 @@ export function parseManifest(filePath: string, module: string): ManifestInfo {
       .map((m) => m[1] ?? m[2])
       .filter(Boolean)
 
-    return { name, version, depends, author, license: license_ }
-  } catch {
+    return { name, version, depends, author, license }
+  } catch (err) {
+    console.warn(`[manifest] Failed to parse ${filePath}:`, err)
     return { name: module, version: "", depends: [], author: "", license: "" }
   }
 }
