@@ -179,10 +179,12 @@ export class DoodbaIndexDatabase {
       "CREATE INDEX IF NOT EXISTS idx_item_module ON indexed_items(module)",
       "CREATE INDEX IF NOT EXISTS idx_item_type_name ON indexed_items(item_type, name)",
       "CREATE INDEX IF NOT EXISTS idx_dependency_depth ON indexed_items(dependency_depth)",
+      "CREATE INDEX IF NOT EXISTS idx_module_item_type ON indexed_items(module, item_type)",
       "CREATE INDEX IF NOT EXISTS idx_ref_item_id ON item_references(item_id)",
       "CREATE INDEX IF NOT EXISTS idx_ref_file ON item_references(file_path)",
       "CREATE UNIQUE INDEX IF NOT EXISTS idx_ref_unique ON item_references(item_id, file_path, line_number, reference_type)",
       "CREATE INDEX IF NOT EXISTS idx_file_path ON file_metadata(file_path)",
+      "CREATE INDEX IF NOT EXISTS idx_file_module ON file_metadata(file_path, module)",
     ])
       this.db.run(idx);
   }
