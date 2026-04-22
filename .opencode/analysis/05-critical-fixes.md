@@ -23,41 +23,40 @@
 Track subprocess, use `'ignore'` for output:
 
 ```javascript
-const SPAWNED_WORKERS = new Map()
+const SPAWNED_WORKERS = new Map();
 
 function spawnIndexing(projectDir, doodbaRootPath, sourcePaths) {
   // Kill any existing worker to prevent concurrent indexing
-  const existing = SPAWNED_WORKERS.get(projectDir)
+  const existing = SPAWNED_WORKERS.get(projectDir);
   if (existing?.pid) {
     try {
-      process.kill(existing.pid, 'SIGKILL')
+      process.kill(existing.pid, "SIGKILL");
     } catch (e) {
       // Already dead
     }
   }
 
-  const workerPath = path.resolve(packageRoot, 'src/indexer-worker.ts')
-  
+  const workerPath = path.resolve(packageRoot, "src/indexer-worker.ts");
+
   try {
-    const worker = Bun.spawn(
-      ['bun', workerPath, projectDir, doodbaRootPath, ...sourcePaths],
-      {
-        stdout: 'ignore',  // Don't pipe; ignore output (or 'inherit' for logs)
-        stderr: 'ignore'
-      }
-    )
-    
-    SPAWNED_WORKERS.set(projectDir, { pid: worker.pid, worker })
-    
-    worker.onExit.then(() => {
-      SPAWNED_WORKERS.delete(projectDir)
-    }).catch(() => {})
+    const worker = Bun.spawn(["bun", workerPath, projectDir, doodbaRootPath, ...sourcePaths], {
+      stdout: "ignore", // Don't pipe; ignore output (or 'inherit' for logs)
+      stderr: "ignore",
+    });
+
+    SPAWNED_WORKERS.set(projectDir, { pid: worker.pid, worker });
+
+    worker.onExit
+      .then(() => {
+        SPAWNED_WORKERS.delete(projectDir);
+      })
+      .catch(() => {});
   } catch (e) {
-    console.error(`[doodba-dev] Failed to spawn indexer: ${e.message}`)
-    updateState(doodbaRootPath, { 
-      status: 'FAILED', 
-      error: `Spawn failed: ${e.message}` 
-    })
+    console.error(`[doodba-dev] Failed to spawn indexer: ${e.message}`);
+    updateState(doodbaRootPath, {
+      status: "FAILED",
+      error: `Spawn failed: ${e.message}`,
+    });
   }
 }
 
@@ -65,12 +64,12 @@ function spawnIndexing(projectDir, doodbaRootPath, sourcePaths) {
 function cleanup() {
   for (const { pid } of SPAWNED_WORKERS.values()) {
     try {
-      process.kill(pid, 'SIGKILL')
+      process.kill(pid, "SIGKILL");
     } catch (e) {
       // Already dead
     }
   }
-  SPAWNED_WORKERS.clear()
+  SPAWNED_WORKERS.clear();
 }
 ```
 
@@ -80,7 +79,7 @@ function cleanup() {
 test("should not deadlock on large indexing output", () => {
   // Create a huge module that produces ~1MB of logging output
   // Verify indexing completes without hang
-})
+});
 ```
 
 ---
@@ -100,60 +99,63 @@ Multiple workers spawn for same project without coordination. Non-atomic state.j
 Use lockfile for mutual exclusion:
 
 ```javascript
-const fs = require('fs')
-const lockTimeoutMs = 5000
+const fs = require("fs");
+const lockTimeoutMs = 5000;
 
 function acquireIndexLock(projectDir) {
-  const lockPath = path.join(projectDir, '.opencode', 'doodba-dev', 'indexer.lock')
-  const lockDir = path.dirname(lockPath)
-  
+  const lockPath = path.join(projectDir, ".opencode", "doodba-dev", "indexer.lock");
+  const lockDir = path.dirname(lockPath);
+
   if (!fs.existsSync(lockDir)) {
-    fs.mkdirSync(lockDir, { recursive: true })
+    fs.mkdirSync(lockDir, { recursive: true });
   }
-  
-  const startTime = Date.now()
+
+  const startTime = Date.now();
   while (true) {
     try {
       // Exclusive create-only open
-      const fd = fs.openSync(lockPath, fs.constants.O_CREAT | fs.constants.O_EXCL | fs.constants.O_WRONLY)
-      fs.writeSync(fd, JSON.stringify({ pid: process.pid, timestamp: Date.now() }))
-      fs.closeSync(fd)
-      return lockPath
+      const fd = fs.openSync(
+        lockPath,
+        fs.constants.O_CREAT | fs.constants.O_EXCL | fs.constants.O_WRONLY
+      );
+      fs.writeSync(fd, JSON.stringify({ pid: process.pid, timestamp: Date.now() }));
+      fs.closeSync(fd);
+      return lockPath;
     } catch (e) {
       if (Date.now() - startTime > lockTimeoutMs) {
-        const existing = fs.readFileSync(lockPath, 'utf-8')
-        throw new Error(`Indexer locked by another process: ${existing}`)
+        const existing = fs.readFileSync(lockPath, "utf-8");
+        throw new Error(`Indexer locked by another process: ${existing}`);
       }
       // Sleep and retry
-      const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms))
-      Bun.sleep(100)  // or await sleep(100)
+      const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+      Bun.sleep(100); // or await sleep(100)
     }
   }
 }
 
 function releaseIndexLock(lockPath) {
   try {
-    fs.unlinkSync(lockPath)
+    fs.unlinkSync(lockPath);
   } catch (e) {
-    console.warn(`[doodba-dev] Failed to release lock: ${e.message}`)
+    console.warn(`[doodba-dev] Failed to release lock: ${e.message}`);
   }
 }
 
 // In plugin factory:
-let lockPath = null
+let lockPath = null;
 try {
-  lockPath = acquireIndexLock(doodbaRoot)
-  
+  lockPath = acquireIndexLock(doodbaRoot);
+
   // Re-check status after lock acquired
-  const state = readState(doodbaRoot)
-  if (state.status === 'READY') {
-    return  // Another worker completed while we waited
+  const state = readState(doodbaRoot);
+  if (state.status === "READY") {
+    return; // Another worker completed while we waited
   }
-  
+
   // Safe to spawn now
-  spawnIndexing(doodbaRoot, doodbaRoot, getSourcePaths(doodbaRoot))
+  spawnIndexing(doodbaRoot, doodbaRoot, getSourcePaths(doodbaRoot));
 } finally {
-  if (lockPath) releaseIndexLock(lockPath)
+  if (lockPath) releaseIndexLock(lockPath);
 }
 ```
 
@@ -163,7 +165,7 @@ try {
 test("should not spawn concurrent indexers", () => {
   // Simulate two plugin instances detecting same project
   // Verify only one worker spawns, not two
-})
+});
 ```
 
 ---
@@ -185,32 +187,32 @@ Safe parsing with fallback:
 ```typescript
 // src/database.ts
 function safeParseAttributes(json: string | null): Record<string, any> {
-  if (!json) return {}
+  if (!json) return {};
   try {
-    const parsed = JSON.parse(json)
-    if (typeof parsed === 'object' && parsed !== null) {
-      return parsed
+    const parsed = JSON.parse(json);
+    if (typeof parsed === "object" && parsed !== null) {
+      return parsed;
     }
   } catch (e) {
     console.warn(
       `[database] Failed to parse attributes JSON (${json.slice(0, 50)}...): ${e instanceof Error ? e.message : String(e)}`
-    )
+    );
   }
-  return {}
+  return {};
 }
 
 // In mapRow:
-attributes: safeParseAttributes(r.attributes)
+attributes: safeParseAttributes(r.attributes);
 ```
 
 ### Test
 
 ```typescript
 test("should handle corrupted JSON in attributes", () => {
-  db.run(`INSERT INTO indexed_items (...) VALUES (..., 'invalid json', ...)`)
-  const item = db.getItemById(1)
-  expect(item.attributes).toEqual({})  // Graceful fallback
-})
+  db.run(`INSERT INTO indexed_items (...) VALUES (..., 'invalid json', ...)`);
+  const item = db.getItemById(1);
+  expect(item.attributes).toEqual({}); // Graceful fallback
+});
 ```
 
 ---
@@ -231,34 +233,34 @@ Validate and coerce to integer:
 
 ```typescript
 // src/database.ts in search() method
-const limit = Math.max(1, Math.min(opts.limit ?? DEFAULT_SEARCH_LIMIT, 1000))
+const limit = Math.max(1, Math.min(opts.limit ?? DEFAULT_SEARCH_LIMIT, 1000));
 // Now limit is guaranteed to be a safe integer
-const query = `SELECT ... LIMIT ${limit}`
+const query = `SELECT ... LIMIT ${limit}`;
 ```
 
 Or use parameterized query if `bun:sqlite` supports it:
 
 ```typescript
 // Check bun:sqlite docs for LIMIT ? support
-const stmt = this.db.prepare(`SELECT ... LIMIT ?`)
-const results = stmt.all(limit)
+const stmt = this.db.prepare(`SELECT ... LIMIT ?`);
+const results = stmt.all(limit);
 ```
 
 ### Test
 
 ```typescript
 test("should reject non-numeric LIMIT values", () => {
-  expect(() => db.search({ limit: "1; DROP TABLE indexed_items; --" })).toThrow()
-  expect(() => db.search({ limit: {} })).toThrow()
-})
+  expect(() => db.search({ limit: "1; DROP TABLE indexed_items; --" })).toThrow();
+  expect(() => db.search({ limit: {} })).toThrow();
+});
 
 test("should clamp LIMIT to safe range", () => {
-  const results1 = db.search({ limit: -1 })
-  expect(results1.length).toBeLessThanOrEqual(1)  // Minimum is 1
-  
-  const results2 = db.search({ limit: 999999 })
-  expect(results2.length).toBeLessThanOrEqual(1000)  // Maximum is 1000
-})
+  const results1 = db.search({ limit: -1 });
+  expect(results1.length).toBeLessThanOrEqual(1); // Minimum is 1
+
+  const results2 = db.search({ limit: 999999 });
+  expect(results2.length).toBeLessThanOrEqual(1000); // Maximum is 1000
+});
 ```
 
 ---
@@ -280,44 +282,46 @@ Track visited inodes:
 ```typescript
 // src/indexer.ts
 function walkDir(dir: string, exts: string[], visited = new Set<number>()): string[] {
-  const results: string[] = []
+  const results: string[] = [];
 
   // Resolve and get inode
-  let inode: number
+  let inode: number;
   try {
-    const stat = statSync(dir)
+    const stat = statSync(dir);
     if (!stat.isDirectory()) {
-      return results  // Not a directory
+      return results; // Not a directory
     }
-    inode = stat.ino
+    inode = stat.ino;
   } catch (e) {
-    return results  // Permission denied or deleted
+    return results; // Permission denied or deleted
   }
 
   // Check for cycles
   if (visited.has(inode)) {
-    console.warn(`[walkDir] Cycle detected: ${dir}`)
-    return results
+    console.warn(`[walkDir] Cycle detected: ${dir}`);
+    return results;
   }
-  visited.add(inode)
+  visited.add(inode);
 
   try {
-    const entries = readdirSync(dir, { withFileTypes: true })
+    const entries = readdirSync(dir, { withFileTypes: true });
     for (const entry of entries) {
-      const full = join(dir, entry.name)
-      
+      const full = join(dir, entry.name);
+
       // Recurse on directories, but not symlinks
       if (entry.isDirectory() && !entry.isSymbolicLink() && !entry.name.startsWith(".")) {
-        results.push(...walkDir(full, exts, visited))
-      } else if (!entry.isDirectory() && exts.some(ext => full.endsWith(ext))) {
-        results.push(full)
+        results.push(...walkDir(full, exts, visited));
+      } else if (!entry.isDirectory() && exts.some((ext) => full.endsWith(ext))) {
+        results.push(full);
       }
     }
   } catch (e) {
-    console.warn(`[walkDir] Failed to read directory ${dir}: ${e instanceof Error ? e.message : String(e)}`)
+    console.warn(
+      `[walkDir] Failed to read directory ${dir}: ${e instanceof Error ? e.message : String(e)}`
+    );
   }
 
-  return results
+  return results;
 }
 ```
 
@@ -325,18 +329,18 @@ function walkDir(dir: string, exts: string[], visited = new Set<number>()): stri
 
 ```typescript
 test("should handle symlink cycles gracefully", () => {
-  const tempDir = mkdtempSync(join(tmpdir(), "walkdir-test-"))
+  const tempDir = mkdtempSync(join(tmpdir(), "walkdir-test-"));
   try {
     // Create a symlink cycle
-    symlinkSync(tempDir, join(tempDir, "self"), "dir")
-    
-    const files = walkDir(tempDir, [".py"])
-    expect(files).toBeDefined()
-    expect(files.length).toBeGreaterThanOrEqual(0)  // Should not crash
+    symlinkSync(tempDir, join(tempDir, "self"), "dir");
+
+    const files = walkDir(tempDir, [".py"]);
+    expect(files).toBeDefined();
+    expect(files.length).toBeGreaterThanOrEqual(0); // Should not crash
   } finally {
-    rmSync(tempDir, { recursive: true })
+    rmSync(tempDir, { recursive: true });
   }
-})
+});
 ```
 
 ---
@@ -358,38 +362,38 @@ Use atomic file replacement:
 ```typescript
 // src/project-state.ts
 export function updateState(root: string, partial: Partial<DoodbaIndexState>): void {
-  const stateDir = getStateDir(root)
-  const statePath = join(stateDir, "state.json")
-  const tmpPath = statePath + ".tmp"
+  const stateDir = getStateDir(root);
+  const statePath = join(stateDir, "state.json");
+  const tmpPath = statePath + ".tmp";
 
   // Read current state
-  let current = { ...DEFAULT_STATE }
+  let current = { ...DEFAULT_STATE };
   if (existsSync(statePath)) {
     try {
-      const content = readFileSync(statePath, "utf-8")
-      current = { ...DEFAULT_STATE, ...JSON.parse(content) }
+      const content = readFileSync(statePath, "utf-8");
+      current = { ...DEFAULT_STATE, ...JSON.parse(content) };
     } catch (e) {
-      console.warn(`[project-state] Failed to read state.json, starting fresh: ${e}`)
+      console.warn(`[project-state] Failed to read state.json, starting fresh: ${e}`);
     }
   }
 
   // Merge update
-  const next = { ...current, ...partial }
+  const next = { ...current, ...partial };
 
   // Write to temp file
-  writeFileSync(tmpPath, JSON.stringify(next, null, 2))
+  writeFileSync(tmpPath, JSON.stringify(next, null, 2));
 
   // Atomic rename (POSIX)
   try {
-    renameSync(tmpPath, statePath)
+    renameSync(tmpPath, statePath);
   } catch (e) {
     // Cleanup temp file if rename fails
     try {
-      unlinkSync(tmpPath)
+      unlinkSync(tmpPath);
     } catch (e2) {
       // Ignore cleanup error
     }
-    throw new Error(`[project-state] Failed to update state: ${e}`)
+    throw new Error(`[project-state] Failed to update state: ${e}`);
   }
 }
 ```
@@ -398,24 +402,24 @@ export function updateState(root: string, partial: Partial<DoodbaIndexState>): v
 
 ```typescript
 test("should handle concurrent state updates atomically", () => {
-  const root = mkdtempSync(join(tmpdir(), "state-test-"))
+  const root = mkdtempSync(join(tmpdir(), "state-test-"));
   try {
     // Spawn two processes calling updateState simultaneously
-    const p1 = spawn("bun", ["-e", `updateState("${root}", {status: "INDEXING"})`])
-    const p2 = spawn("bun", ["-e", `updateState("${root}", {error: "test"})`])
-    
+    const p1 = spawn("bun", ["-e", `updateState("${root}", {status: "INDEXING"})`]);
+    const p2 = spawn("bun", ["-e", `updateState("${root}", {error: "test"})`]);
+
     // Wait for both
-    p1.onExit
-    p2.onExit
-    
+    p1.onExit;
+    p2.onExit;
+
     // Check that state is valid (not corrupted)
-    const state = readState(root)
-    expect(state).toBeDefined()
-    expect(state.status || state.error).toBeDefined()  // At least one update persisted
+    const state = readState(root);
+    expect(state).toBeDefined();
+    expect(state.status || state.error).toBeDefined(); // At least one update persisted
   } finally {
-    rmSync(root, { recursive: true })
+    rmSync(root, { recursive: true });
   }
-})
+});
 ```
 
 ---

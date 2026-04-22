@@ -21,7 +21,9 @@ Use the `doodba_*` tools to search and explore Odoo code structure instead of re
 ## Tool Reference
 
 ### doodba_search
+
 Search for models, fields, views, methods, menuitems, or xml_ids.
+
 - `query` — search term (supports wildcards)
 - `type` — model/field/view/method/menuitem/xml_id
 - `module` — filter by module
@@ -29,42 +31,56 @@ Search for models, fields, views, methods, menuitems, or xml_ids.
 - `limit` — max results (default 50)
 
 ### doodba_get_details
+
 Get complete info about a specific entity.
+
 - `name` — entity name (e.g., "sale.order")
 - `type` — entity type
 - For `type=method`, the result includes a `decorators` array (e.g., `["api.depends", "api.multi"]`) when decorators are present on the method.
 
 ### doodba_list_modules
+
 List all indexed modules. Optional `pattern` filter.
 
 ### doodba_module_stats
+
 Get item counts for a module.
+
 - `module` — module name
 
 ### doodba_find_refs
+
 Find all references to a model or field.
+
 - `name` — entity name
 - `type` — model/field/view/method
 
 ### doodba_search_by_attr
+
 Search by attribute values.
+
 - `type` — model/field/view/method
 - `filters` — JSON object, e.g. `{"required": true}`
 - `module` — optional filter
 
 ### doodba_search_xml_id
+
 Search for XML IDs (external IDs).
+
 - `query` — search term
 - `module` — optional filter
 - `limit` — max results
 
 ### doodba_update_index
+
 Re-index Odoo source code.
+
 - `paths` — comma-separated root paths (blocked: `/` and home directory are refused for safety)
 - `modules` — optional comma-separated module names
 - `full` — clear existing data first
 
 ### doodba_index_status
+
 Show index statistics (item counts, last indexed).
 
 ## Best Practices

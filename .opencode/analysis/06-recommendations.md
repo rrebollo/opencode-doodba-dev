@@ -18,17 +18,17 @@ Generate unique temp paths per test:
 ```typescript
 // Before each test, not at module load time
 beforeEach(() => {
-  TMP_DB = join(tmpdir(), `test-database-${crypto.randomUUID()}.db`)
-})
+  TMP_DB = join(tmpdir(), `test-database-${crypto.randomUUID()}.db`);
+});
 
 afterEach(() => {
-  if (db) db.close()
+  if (db) db.close();
   try {
-    unlinkSync(TMP_DB)
+    unlinkSync(TMP_DB);
   } catch (e) {
     // Ignore cleanup errors
   }
-})
+});
 ```
 
 ### 2.2 Remove Flaky Timing Assertions
@@ -39,9 +39,9 @@ Replace `expect(duration).toBeLessThan(100)` with deterministic assertions:
 
 ```typescript
 // Instead of timing checks, verify functionality
-const plugin = await DoodbaDevPlugin({ directory })
-expect(plugin.tool).toBeDefined()
-expect(plugin.tool.doodba_search).toBeDefined()
+const plugin = await DoodbaDevPlugin({ directory });
+expect(plugin.tool).toBeDefined();
+expect(plugin.tool.doodba_search).toBeDefined();
 // Don't assert performance; measure if needed but don't fail on it
 ```
 
@@ -58,19 +58,19 @@ timeout = 30000
 Global test setup, shared mocks, helpers:
 
 ```typescript
-import { beforeEach, afterEach } from 'bun:test'
-import { mkdtempSync, rmSync } from 'node:fs'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { beforeEach, afterEach } from "bun:test";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
-const PROJECT_ROOT = process.cwd()
+const PROJECT_ROOT = process.cwd();
 
 // Validate test isolation
 afterEach(() => {
   if (process.cwd() !== PROJECT_ROOT) {
-    throw new Error(`Test left process in ${process.cwd()}, expected ${PROJECT_ROOT}`)
+    throw new Error(`Test left process in ${process.cwd()}, expected ${PROJECT_ROOT}`);
   }
-})
+});
 ```
 
 ### 2.5 Add Test Scripts to `package.json`
@@ -102,20 +102,20 @@ Do all heavy lifting before returning config:
 
 ```javascript
 function DoodbaDevPlugin({ directory }) {
-  const doodbaRoot = findDoodbaRoot(directory)
-  
+  const doodbaRoot = findDoodbaRoot(directory);
+
   // Synchronous config injection
-  const configPatch = {}
+  const configPatch = {};
   if (doodbaRoot) {
-    configPatch.skills = { paths: [skillsDir] }
-    configPatch.command = loadCommands()
-    configPatch.agent = loadAgents()
+    configPatch.skills = { paths: [skillsDir] };
+    configPatch.command = loadCommands();
+    configPatch.agent = loadAgents();
   }
-  
+
   return {
     tool: doodbaTools,
-    config: configPatch  // Not a callback; just return the patch
-  }
+    config: configPatch, // Not a callback; just return the patch
+  };
 }
 ```
 
@@ -125,21 +125,21 @@ function DoodbaDevPlugin({ directory }) {
 
 ```typescript
 export interface ToolResponse {
-  status: IndexerState["status"]
-  message?: string
-  results?: unknown
+  status: IndexerState["status"];
+  message?: string;
+  results?: unknown;
 }
 
 export function formatResponse(
   status: IndexerState["status"],
   results?: unknown,
-  message?: string,
+  message?: string
 ): ToolResponse {
   return {
     status,
     message: message || getStatusMessage(status),
     results,
-  }
+  };
 }
 
 // Tools now return ToolResponse, not JSON string
@@ -155,14 +155,14 @@ Return immediately with status, run indexing in background:
 ```typescript
 async execute(args, context: ToolContext) {
   const resolved = resolveProjectDir(context.directory)
-  
+
   // Don't block the event loop; spawn background work
   setImmediate(() => {
     // Heavy indexing happens here, not blocking await
     indexModules({ ... })
     updateState(resolved, { status: "READY" })
   })
-  
+
   return formatResponse(
     "INDEXING",
     undefined,
@@ -177,7 +177,7 @@ Or spawn a subprocess:
 async execute(args, context: ToolContext) {
   const resolved = resolveProjectDir(context.directory)
   const worker = spawnIndexingWorker(resolved, args)
-  
+
   return new Promise((resolve) => {
     worker.onExit.then(() => {
       resolve(formatResponse("READY", { indexed: true }))
@@ -198,12 +198,14 @@ async execute(args, context: ToolContext) {
 **File**: `src/parsers/python-regex.ts`
 
 Option A: **Delete** (recommended)
+
 ```bash
 rm src/parsers/python-regex.ts
 grep -r "parsePythonRegex" src/ tests/ || echo "No references found"
 ```
 
 Option B: **Use as fallback** (if robustness is desired)
+
 - Fix O(n²) string slicing
 - Merge types with `ParsedItem`
 - Wire into indexer with try-fallback-on-error
@@ -215,21 +217,21 @@ Merge `python-regex.ts` types with `types.ts`:
 ```typescript
 // src/parsers/types.ts
 export interface ParsedItem {
-  itemType: string
-  name: string
-  parentName: string | null
-  module: string
-  attributes: Record<string, unknown>  // Use 'unknown', not 'any'
-  dependencyDepth: number
-  references?: ItemReference[]
+  itemType: string;
+  name: string;
+  parentName: string | null;
+  module: string;
+  attributes: Record<string, unknown>; // Use 'unknown', not 'any'
+  dependencyDepth: number;
+  references?: ItemReference[];
 }
 
 export interface ItemReference {
-  itemId?: number
-  filePath: string
-  lineNumber: number
-  referenceType: string
-  context?: string | null
+  itemId?: number;
+  filePath: string;
+  lineNumber: number;
+  referenceType: string;
+  context?: string | null;
 }
 ```
 
@@ -240,11 +242,11 @@ export interface ItemReference {
 Use `gray-matter` or `yaml` npm package:
 
 ```javascript
-import matter from 'gray-matter'
+import matter from "gray-matter";
 
 function parseFrontmatter(content) {
-  const { data: frontmatter, content: body } = matter(content)
-  return { frontmatter, body }
+  const { data: frontmatter, content: body } = matter(content);
+  return { frontmatter, body };
 }
 ```
 
@@ -266,9 +268,9 @@ Create `.opencode/doodba-dev.config.json`:
 Load in plugin factory:
 
 ```javascript
-const userConfig = loadConfig(directory)
-const MARKER_FILE = userConfig?.doodbaMarkerFile ?? ".copier-answers.yml"
-const STUCK_TIMEOUT = userConfig?.stuckIndexerTimeoutMs ?? 30 * 60 * 1000
+const userConfig = loadConfig(directory);
+const MARKER_FILE = userConfig?.doodbaMarkerFile ?? ".copier-answers.yml";
+const STUCK_TIMEOUT = userConfig?.stuckIndexerTimeoutMs ?? 30 * 60 * 1000;
 ```
 
 ### 4.5 Harden Manifest Parsing
@@ -276,27 +278,28 @@ const STUCK_TIMEOUT = userConfig?.stuckIndexerTimeoutMs ?? 30 * 60 * 1000
 **File**: `src/parsers/manifest.ts`
 
 Either:
+
 1. Spawn Python to parse dict safely: `ast.literal_eval()`
 2. Use a Python literal parser library
 
 ```typescript
 // Option: Invoke Python for safety
 function parseManifest(filePath: string, module: string): ParsedItem[] {
-  const manifestCode = readFileSync(filePath, "utf-8")
-  
+  const manifestCode = readFileSync(filePath, "utf-8");
+
   // Spawn Python to safely evaluate the dict
   const result = spawnSync(PYTHON_BINARY, [
     "-c",
-    `import ast, json; d = ast.literal_eval(${JSON.stringify(manifestCode)}); print(json.dumps(d))`
-  ])
-  
+    `import ast, json; d = ast.literal_eval(${JSON.stringify(manifestCode)}); print(json.dumps(d))`,
+  ]);
+
   if (result.status !== 0) {
-    console.warn(`[manifest] Failed to parse ${filePath}`)
-    return []
+    console.warn(`[manifest] Failed to parse ${filePath}`);
+    return [];
   }
-  
-  const manifest = JSON.parse(result.stdout)
-  return extractManifestItems(manifest, module)
+
+  const manifest = JSON.parse(result.stdout);
+  return extractManifestItems(manifest, module);
 }
 ```
 
@@ -307,38 +310,38 @@ Add to `tests/unit/parsers.test.ts`:
 ```typescript
 describe("parsePythonAst", () => {
   test("extracts models and fields", () => {
-    const items = parsePythonAst("tests/fixtures/model.py", "my_module")
-    expect(items.length).toBeGreaterThan(0)
-    expect(items[0].itemType).toBe("model")
-  })
+    const items = parsePythonAst("tests/fixtures/model.py", "my_module");
+    expect(items.length).toBeGreaterThan(0);
+    expect(items[0].itemType).toBe("model");
+  });
 
   test("handles malformed Python gracefully", () => {
-    const items = parsePythonAst("tests/fixtures/broken.py", "my_module")
-    expect(items).toEqual([])  // Graceful fallback
-  })
+    const items = parsePythonAst("tests/fixtures/broken.py", "my_module");
+    expect(items).toEqual([]); // Graceful fallback
+  });
 
   test("skips files over 50MB", () => {
     // Create temp huge file
     // Verify it's skipped, not indexed
-  })
-})
+  });
+});
 
 describe("parseManifest", () => {
   test("extracts manifest metadata", () => {
-    const items = parseManifest("tests/fixtures/__manifest__.py", "my_module")
-    expect(items[0].name).toBe("My Module")
-  })
+    const items = parseManifest("tests/fixtures/__manifest__.py", "my_module");
+    expect(items[0].name).toBe("My Module");
+  });
 
   test("handles escaped quotes", () => {
-    const items = parseManifest("tests/fixtures/escaped_manifest.py", "my_module")
-    expect(items[0].attributes.description).toContain("'")
-  })
+    const items = parseManifest("tests/fixtures/escaped_manifest.py", "my_module");
+    expect(items[0].attributes.description).toContain("'");
+  });
 
   test("handles colons in values", () => {
-    const items = parseManifest("tests/fixtures/url_manifest.py", "my_module")
-    expect(items[0].attributes.url).toContain("https://")
-  })
-})
+    const items = parseManifest("tests/fixtures/url_manifest.py", "my_module");
+    expect(items[0].attributes.url).toContain("https://");
+  });
+});
 ```
 
 ### 4.7 Add Configuration to `package.json`
@@ -350,10 +353,7 @@ describe("parseManifest", () => {
   "description": "OpenCode plugin for Doodba (Odoo) development — provides source indexing and AI-assisted exploration",
   "type": "module",
   "main": ".opencode/plugins/doodba-dev.js",
-  "files": [
-    ".opencode/",
-    "src/"
-  ],
+  "files": [".opencode/", "src/"],
   "exports": {
     ".": ".opencode/plugins/doodba-dev.js"
   },
@@ -433,12 +433,12 @@ describe("parseManifest", () => {
 
 ## Summary Table
 
-| Phase | Fixes | Effort | Risk Reduction | Priority |
-|-------|-------|--------|---|---|
-| **1** | 6 critical (subprocess, concurrency, JSON, SQL, symlinks, state) | 2-3 days | 60% | 🔴 CRITICAL |
-| **2** | Test isolation, flaky tests, CI config | 1-2 days | 40% | 🟠 HIGH |
-| **3** | API compliance, event loop, tool returns | 1 day | 20% | 🟡 MEDIUM |
-| **4** | Dead code, consolidation, hardening | 2-3 days | 15% | 🟡 MEDIUM |
+| Phase | Fixes                                                            | Effort   | Risk Reduction | Priority    |
+| ----- | ---------------------------------------------------------------- | -------- | -------------- | ----------- |
+| **1** | 6 critical (subprocess, concurrency, JSON, SQL, symlinks, state) | 2-3 days | 60%            | 🔴 CRITICAL |
+| **2** | Test isolation, flaky tests, CI config                           | 1-2 days | 40%            | 🟠 HIGH     |
+| **3** | API compliance, event loop, tool returns                         | 1 day    | 20%            | 🟡 MEDIUM   |
+| **4** | Dead code, consolidation, hardening                              | 2-3 days | 15%            | 🟡 MEDIUM   |
 
 **Total risk reduction if all phases completed**: 95% (from 73 issues → 3 remaining)
 
@@ -447,6 +447,7 @@ describe("parseManifest", () => {
 ## Success Criteria
 
 ### Phase 1 (Critical Fixes)
+
 - ✅ No subprocess deadlocks (tested with large codebase)
 - ✅ No state.json corruption (concurrent access test)
 - ✅ All DB operations gracefully handle edge cases
@@ -454,18 +455,21 @@ describe("parseManifest", () => {
 - ✅ No SQL injection vulnerabilities
 
 ### Phase 2 (Test Infrastructure)
+
 - ✅ All unit tests pass consistently (run 10x)
 - ✅ E2E tests pass in parallel
 - ✅ Coverage > 80%
 - ✅ CI runs in < 5 minutes
 
 ### Phase 3 (API Compliance)
+
 - ✅ Plugin config is synchronous
 - ✅ Tools return objects, not JSON strings
 - ✅ UI doesn't freeze during indexing
 - ✅ OpenCode SDK validation passes
 
 ### Phase 4 (Code Quality)
+
 - ✅ No dead code
 - ✅ No type duplication
 - ✅ Parser tests cover edge cases
@@ -497,16 +501,16 @@ describe("parseManifest", () => {
 
 ## Appendix: Files to Focus On
 
-| Priority | File | Issues | Effort |
-|---|---|---|---|
-| 🔴 | `.opencode/plugins/doodba-dev.js` | 9 | 2 days |
-| 🔴 | `src/database.ts` | 8 | 1.5 days |
-| 🔴 | `src/indexer.ts` | 7 | 1.5 days |
-| 🟠 | `src/parsers/python-ast.ts` | 6 | 1 day |
-| 🟠 | `tests/unit/*.test.ts` | 6 | 1.5 days |
-| 🟠 | `tests/e2e/*.test.ts` | 8 | 2 days |
-| 🟡 | `src/parsers/manifest.ts` | 3 | 0.5 days |
-| 🟡 | `src/parsers/python-regex.ts` | 4 | 0 days (delete) |
-| 🟡 | Configuration files (package.json, tsconfig.json, biome.json) | 6 | 0.5 days |
+| Priority | File                                                          | Issues | Effort          |
+| -------- | ------------------------------------------------------------- | ------ | --------------- |
+| 🔴       | `.opencode/plugins/doodba-dev.js`                             | 9      | 2 days          |
+| 🔴       | `src/database.ts`                                             | 8      | 1.5 days        |
+| 🔴       | `src/indexer.ts`                                              | 7      | 1.5 days        |
+| 🟠       | `src/parsers/python-ast.ts`                                   | 6      | 1 day           |
+| 🟠       | `tests/unit/*.test.ts`                                        | 6      | 1.5 days        |
+| 🟠       | `tests/e2e/*.test.ts`                                         | 8      | 2 days          |
+| 🟡       | `src/parsers/manifest.ts`                                     | 3      | 0.5 days        |
+| 🟡       | `src/parsers/python-regex.ts`                                 | 4      | 0 days (delete) |
+| 🟡       | Configuration files (package.json, tsconfig.json, biome.json) | 6      | 0.5 days        |
 
 **Total effort if all items completed**: ~12 days of focused work

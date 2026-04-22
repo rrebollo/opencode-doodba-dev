@@ -12,6 +12,7 @@
 The `opencode-doodba-dev` project is a Bun-based OpenCode plugin that provides Odoo source code indexing and AI-assisted exploration. The plugin indexes Python, XML, CSV, and manifest files into SQLite, exposes search/reference tools to OpenCode agents, and manages a background indexing worker.
 
 **Tech Stack:**
+
 - **Runtime**: Bun (ES modules, `bun:sqlite`, `Bun.spawn`)
 - **Language**: TypeScript 5.5+ (strict mode)
 - **Parsing**: `fast-xml-parser`, custom CSV/regex parsers, Python `ast` subprocess
@@ -65,21 +66,22 @@ The `opencode-doodba-dev` project is a Bun-based OpenCode plugin that provides O
 
 ## Impact Assessment
 
-| Category | Severity | User Impact | Examples |
-|----------|----------|-------------|----------|
-| **Plugin crashes** | 🔴 Critical | Plugin fails to load; Doodba projects unreachable | Unhandled `Bun.spawn` errors; DB file permission denied |
-| **Data corruption** | 🔴 Critical | Index becomes unusable; lost updates | Concurrent JSON state writes; race conditions in tests |
-| **Zombie processes** | 🔴 Critical | Resource leaks; gradual system slowdown | Piped stdio deadlock; no subprocess tracking |
-| **UI freezes** | 🟠 High | Blocking event loop during tool execution | Synchronous heavy I/O in tool `execute`; long transactions |
-| **Silent failures** | 🟠 High | Parser errors hidden; users unaware of incomplete indexing | Bare `catch { return [] }` blocks; permission errors |
-| **Test flakiness** | 🟠 High | CI failures; developer frustration | Shared temp files; timing-based assertions; parallel races |
-| **Maintenance burden** | 🟡 Medium | Hard to extend/debug; tight coupling | Dead code; duplication; hardcoded values |
+| Category               | Severity    | User Impact                                                | Examples                                                   |
+| ---------------------- | ----------- | ---------------------------------------------------------- | ---------------------------------------------------------- |
+| **Plugin crashes**     | 🔴 Critical | Plugin fails to load; Doodba projects unreachable          | Unhandled `Bun.spawn` errors; DB file permission denied    |
+| **Data corruption**    | 🔴 Critical | Index becomes unusable; lost updates                       | Concurrent JSON state writes; race conditions in tests     |
+| **Zombie processes**   | 🔴 Critical | Resource leaks; gradual system slowdown                    | Piped stdio deadlock; no subprocess tracking               |
+| **UI freezes**         | 🟠 High     | Blocking event loop during tool execution                  | Synchronous heavy I/O in tool `execute`; long transactions |
+| **Silent failures**    | 🟠 High     | Parser errors hidden; users unaware of incomplete indexing | Bare `catch { return [] }` blocks; permission errors       |
+| **Test flakiness**     | 🟠 High     | CI failures; developer frustration                         | Shared temp files; timing-based assertions; parallel races |
+| **Maintenance burden** | 🟡 Medium   | Hard to extend/debug; tight coupling                       | Dead code; duplication; hardcoded values                   |
 
 ---
 
 ## Recommended Fix Priority
 
 ### Phase 1: Critical Stability (addresses crashes, data loss)
+
 1. Fix subprocess pipe deadlock (`.opencode/plugins/doodba-dev.js:70-76`)
 2. Add process lifecycle management (PID tracking, reap on startup)
 3. Implement atomic JSON state writes (rename + fsync pattern)
@@ -90,6 +92,7 @@ The `opencode-doodba-dev` project is a Bun-based OpenCode plugin that provides O
 **Risk reduction**: 60% (eliminates major crash scenarios)
 
 ### Phase 2: Test Infrastructure (fixes CI reliability)
+
 1. Isolate temp file creation per test (move to `beforeEach`)
 2. Remove timing-based assertions
 3. Add `bunfig.toml` with test timeout + preload
@@ -100,6 +103,7 @@ The `opencode-doodba-dev` project is a Bun-based OpenCode plugin that provides O
 **Risk reduction**: 40% (CI becomes green + reliable)
 
 ### Phase 3: API Compliance (prevents runtime surprises)
+
 1. Change `config` callback to synchronous
 2. Return plain objects from tools (not JSON strings)
 3. Move heavy indexing to background worker/promise
@@ -109,6 +113,7 @@ The `opencode-doodba-dev` project is a Bun-based OpenCode plugin that provides O
 **Risk reduction**: 20% (improves OpenCode integration)
 
 ### Phase 4: Code Quality (reduces maintenance burden)
+
 1. Delete `parsePythonRegex` or wire as real fallback
 2. Replace hand-rolled YAML parser with `gray-matter`
 3. Consolidate parser types (`ParsedItem`, etc.)

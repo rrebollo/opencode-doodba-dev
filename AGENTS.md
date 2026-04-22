@@ -21,9 +21,9 @@ This file documents non-discoverable landmines for agents working on the opencod
 
 When working on specific tasks, these files provide specialized context:
 
-| Task | Location | Purpose |
-|------|----------|---------|
-| Environment setup (Docker, Python, uv, auto-indexing) | `.opencode/agents/doodba-provisioner.md` | Subagent spec for `/doodba-setup` |
-| Running Odoo tests | `.opencode/commands/doodba-test.md` | Command spec for `/doodba-test` |
-| Searching/exploring Odoo code | `.opencode/skills/doodba-exploring/SKILL.md` | Skill for index-based exploration |
-| Plugin installation & architecture | `README.md`, `.opencode/plugins/doodba-dev.js` | User-facing install guide and plugin entry point |
+| Task                                                  | Location                                       | Purpose                                          |
+| ----------------------------------------------------- | ---------------------------------------------- | ------------------------------------------------ |
+| Environment setup (Docker, Python, uv, auto-indexing) | `.opencode/agents/doodba-provisioner.md`       | Subagent spec for `/doodba-setup`                |
+| Running Odoo tests                                    | `.opencode/commands/doodba-test.md`            | Command spec for `/doodba-test`                  |
+| Searching/exploring Odoo code                         | `.opencode/skills/doodba-exploring/SKILL.md`   | Skill for index-based exploration                |
+| Plugin installation & architecture                    | `README.md`, `.opencode/plugins/doodba-dev.js` | User-facing install guide and plugin entry point |

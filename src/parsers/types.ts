@@ -5,15 +5,10 @@
  * Shared across all parsers — previously duplicated as PythonItemReference.
  */
 export interface ItemReference {
-  filePath: string
-  lineNumber: number
-  referenceType:
-    | "definition"
-    | "inheritance"
-    | "many2one"
-    | "one2many"
-    | "many2many"
-  context: string | null
+  filePath: string;
+  lineNumber: number;
+  referenceType: "definition" | "inheritance" | "many2one" | "one2many" | "many2many";
+  context: string | null;
 }
 
 /**
@@ -22,10 +17,10 @@ export interface ItemReference {
  * previously defined separately in each parser module.
  */
 export interface ParsedItem {
-  itemType: string
-  name: string
-  parentName: string | null
-  module: string
-  attributes: Record<string, unknown>
-  references: ItemReference[]
+  itemType: string;
+  name: string;
+  parentName: string | null;
+  module: string;
+  attributes: Record<string, unknown>;
+  references: ItemReference[];
 }

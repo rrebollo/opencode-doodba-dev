@@ -33,7 +33,7 @@ Nine tools appear in chat immediately after installation:
 
 - **doodba_get_details** — Get detailed information about a specific Odoo entity. Returns field types, method signatures, view XML, or menuitem hierarchy depending on entity type.
 
-- **doodba_list_modules** — List all indexed Odoo modules. Use optional `pattern` parameter for glob-style filtering (e.g., 'sale*').
+- **doodba_list_modules** — List all indexed Odoo modules. Use optional `pattern` parameter for glob-style filtering (e.g., 'sale\*').
 
 - **doodba_module_stats** — Get item count statistics for a specific Odoo module. Shows counts of models, fields, views, methods, etc.
 

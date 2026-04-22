@@ -9,7 +9,7 @@
  *   qualifyXmlId("sale.order_form", "sale") → "sale.order_form"
  */
 export function qualifyXmlId(id: string, module: string): string {
-  return id.includes(".") ? id : `${module}.${id}`
+  return id.includes(".") ? id : `${module}.${id}`;
 }
 
 /**
@@ -17,11 +17,11 @@ export function qualifyXmlId(id: string, module: string): string {
  * Used by parsers to convert byte offsets to line numbers.
  */
 export function lineNumberAt(src: string, index: number): number {
-  let line = 1
+  let line = 1;
   for (let i = 0; i < index && i < src.length; i++) {
-    if (src[i] === "\n") line++
+    if (src[i] === "\n") line++;
   }
-  return line
+  return line;
 }
 
 /**
@@ -30,6 +30,6 @@ export function lineNumberAt(src: string, index: number): number {
  * behaviour of returning a single object instead of a one-element array.
  */
 export function toArray<T>(val: T | T[] | undefined | null): T[] {
-  if (val === undefined || val === null) return []
-  return Array.isArray(val) ? val : [val]
+  if (val === undefined || val === null) return [];
+  return Array.isArray(val) ? val : [val];
 }

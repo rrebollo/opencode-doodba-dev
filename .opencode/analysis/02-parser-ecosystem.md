@@ -3,6 +3,7 @@
 **Context**: This section covers the parsing layer: Python AST extraction, regex fallback, XML/CSV/manifest parsing, and the Python subprocess orchestration.
 
 **Files analyzed**:
+
 - `src/parsers/python-ast.ts`
 - `src/parsers/python-regex.ts`
 - `src/parsers/python_ast_extract.py`
@@ -37,91 +38,106 @@
 The `parsePythonAst` function spawns a synchronous subprocess for EVERY Python file being indexed. With a 10-second timeout per file, indexing 1000 files takes 10,000 seconds minimum (nearly 3 hours), and the OpenCode UI is completely frozen during this time because `spawnSync` blocks the Node.js event loop.
 
 **Evidence**:
+
 ```typescript
 // src/parsers/python-ast.ts:23
 const result = spawnSync(PYTHON_BINARY, [SCRIPT_PATH, filePath, module], {
   encoding: "utf-8",
-  timeout: PYTHON_SUBPROCESS_TIMEOUT_MS  // 10_000 ms = 10 seconds
-})
+  timeout: PYTHON_SUBPROCESS_TIMEOUT_MS, // 10_000 ms = 10 seconds
+});
 ```
 
 **Impact**:
+
 - Indexing a medium codebase (1000+ files) takes hours
 - OpenCode UI freezes completely during indexing
 - Each file is a separate process spawn/exec overhead
 - No parallelism possible (synchronous API)
 
 **Fix** (Option 1: Batch process):
+
 ```typescript
 // Spawn ONE Python process, send multiple files, get back all results
-let pythonProcess: Bun.Subprocess | undefined
+let pythonProcess: Bun.Subprocess | undefined;
 
 function initPythonWorker() {
-  pythonProcess = Bun.spawn(
-    [PYTHON_BINARY, SCRIPT_PATH],
-    { stdin: "pipe", stdout: "pipe", stderr: "pipe" }
-  )
+  pythonProcess = Bun.spawn([PYTHON_BINARY, SCRIPT_PATH], {
+    stdin: "pipe",
+    stdout: "pipe",
+    stderr: "pipe",
+  });
 }
 
-async function parsePythonAsyncBatch(files: Array<{path: string, module: string}>): Promise<ParsedItem[][]> {
-  if (!pythonProcess) initPythonWorker()
-  
-  const allItems: ParsedItem[][] = []
+async function parsePythonAsyncBatch(
+  files: Array<{ path: string; module: string }>
+): Promise<ParsedItem[][]> {
+  if (!pythonProcess) initPythonWorker();
+
+  const allItems: ParsedItem[][] = [];
   for (const { path, module } of files) {
-    pythonProcess.stdin.write(JSON.stringify({ path, module }) + "\n")
+    pythonProcess.stdin.write(JSON.stringify({ path, module }) + "\n");
   }
-  
+
   // Read back results (one JSON object per line)
-  const reader = pythonProcess.stdout.getReader()
+  const reader = pythonProcess.stdout.getReader();
   for (const file of files) {
-    const result = await reader.read()  // <-- Non-blocking!
-    allItems.push(JSON.parse(new TextDecoder().decode(result.value)))
+    const result = await reader.read(); // <-- Non-blocking!
+    allItems.push(JSON.parse(new TextDecoder().decode(result.value)));
   }
-  
-  return allItems
+
+  return allItems;
 }
 ```
 
 **Fix** (Option 2: Async spawn with Promise):
+
 ```typescript
 async function parsePythonAstAsync(filePath: string, module: string): Promise<ParsedItem[]> {
-  const SCRIPT_PATH = join(__dirname, "python_ast_extract.py")
-  const PYTHON_BINARY = "python3"
-  
+  const SCRIPT_PATH = join(__dirname, "python_ast_extract.py");
+  const PYTHON_BINARY = "python3";
+
   return new Promise((resolve, reject) => {
-    const proc = Bun.spawn(
-      [PYTHON_BINARY, SCRIPT_PATH, filePath, module],
-      { stdout: "pipe", stderr: "pipe" }
-    )
-    
-    let stdout = ""
-    let stderr = ""
-    
-    proc.stdout.pipeTo(new WritableStream({ write: chunk => {
-      stdout += new TextDecoder().decode(chunk)
-    }}))
-    
-    proc.stderr.pipeTo(new WritableStream({ write: chunk => {
-      stderr += new TextDecoder().decode(chunk)
-    }}))
-    
+    const proc = Bun.spawn([PYTHON_BINARY, SCRIPT_PATH, filePath, module], {
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+
+    let stdout = "";
+    let stderr = "";
+
+    proc.stdout.pipeTo(
+      new WritableStream({
+        write: (chunk) => {
+          stdout += new TextDecoder().decode(chunk);
+        },
+      })
+    );
+
+    proc.stderr.pipeTo(
+      new WritableStream({
+        write: (chunk) => {
+          stderr += new TextDecoder().decode(chunk);
+        },
+      })
+    );
+
     setTimeout(() => {
-      proc.kill("SIGKILL")
-      reject(new Error(`Parser timeout for ${filePath}`))
-    }, 10_000)
-    
-    proc.onExit.then(code => {
+      proc.kill("SIGKILL");
+      reject(new Error(`Parser timeout for ${filePath}`));
+    }, 10_000);
+
+    proc.onExit.then((code) => {
       if (code === 0) {
         try {
-          resolve(JSON.parse(stdout))
+          resolve(JSON.parse(stdout));
         } catch (e) {
-          reject(new Error(`Failed to parse Python output: ${e}`))
+          reject(new Error(`Failed to parse Python output: ${e}`));
         }
       } else {
-        reject(new Error(`Python parser exited with code ${code}: ${stderr}`))
+        reject(new Error(`Python parser exited with code ${code}: ${stderr}`));
       }
-    })
-  })
+    });
+  });
 }
 ```
 
@@ -137,16 +153,18 @@ async function parsePythonAstAsync(filePath: string, module: string): Promise<Pa
 The `spawnSync` call does not specify a `maxBuffer` option. If the Python script outputs a very large JSON array (e.g., a model with thousands of fields, or auto-generated code), Node.js will attempt to buffer the entire output in memory. This can cause `ERR_CHILD_PROCESS_STDIO_MAXBUFFER` or heap exhaustion.
 
 **Evidence**:
+
 ```typescript
 // src/parsers/python-ast.ts:23
 const result = spawnSync(PYTHON_BINARY, [SCRIPT_PATH, filePath, module], {
   encoding: "utf-8",
-  timeout: PYTHON_SUBPROCESS_TIMEOUT_MS
+  timeout: PYTHON_SUBPROCESS_TIMEOUT_MS,
   // missing: maxBuffer
-})
+});
 ```
 
 **Scenario**:
+
 ```python
 # auto-generated-fields.py
 # A million-line file with a model definition
@@ -162,32 +180,35 @@ class MyModel(models.Model):
 ```
 
 **Impact**:
+
 - Indexing crashes on large auto-generated files
 - Users cannot index modern codebases with massive models
 
 **Fix**:
+
 ```typescript
 const result = spawnSync(PYTHON_BINARY, [SCRIPT_PATH, filePath, module], {
   encoding: "utf-8",
   timeout: PYTHON_SUBPROCESS_TIMEOUT_MS,
-  maxBuffer: 50 * 1024 * 1024,  // 50 MB buffer
-})
+  maxBuffer: 50 * 1024 * 1024, // 50 MB buffer
+});
 ```
 
 And add file size validation:
+
 ```typescript
 function parsePythonAst(filePath: string, module: string): ParsedItem[] {
-  const stat = statSync(filePath)
+  const stat = statSync(filePath);
   if (stat.size > 50 * 1024 * 1024) {
-    console.warn(`[python-ast] skipping giant file (${stat.size} bytes): ${filePath}`)
-    return []
+    console.warn(`[python-ast] skipping giant file (${stat.size} bytes): ${filePath}`);
+    return [];
   }
-  
+
   const result = spawnSync(PYTHON_BINARY, [SCRIPT_PATH, filePath, module], {
     encoding: "utf-8",
     timeout: PYTHON_SUBPROCESS_TIMEOUT_MS,
     maxBuffer: 50 * 1024 * 1024,
-  })
+  });
   // ...
 }
 ```
@@ -202,6 +223,7 @@ function parsePythonAst(filePath: string, module: string): ParsedItem[] {
 
 **Description**:
 The `parsePythonAst` function has a bare `catch { return [] }` that swallows **all** errors silently. This includes:
+
 - `JSON.parse` failures (malformed JSON from Python)
 - `spawnSync` failures (`ENOENT` if Python not found)
 - Timeout/signal kills (`SIGKILL`)
@@ -210,6 +232,7 @@ The `parsePythonAst` function has a bare `catch { return [] }` that swallows **a
 Callers cannot distinguish "file had no items" from "parser crashed and we're hiding it."
 
 **Evidence**:
+
 ```typescript
 // src/parsers/python-ast.ts:35
 } catch {
@@ -218,55 +241,61 @@ Callers cannot distinguish "file had no items" from "parser crashed and we're hi
 ```
 
 **Impact**:
+
 - Parser failures are completely invisible to users
 - Indexing appears successful but is actually incomplete
 - No way to debug or understand why files weren't indexed
 
 **Fix**:
+
 ```typescript
 function parsePythonAst(filePath: string, module: string): ParsedItem[] {
-  const SCRIPT_PATH = join(__dirname, "python_ast_extract.py")
-  const PYTHON_BINARY = "python3"
-  
+  const SCRIPT_PATH = join(__dirname, "python_ast_extract.py");
+  const PYTHON_BINARY = "python3";
+
   const result = spawnSync(PYTHON_BINARY, [SCRIPT_PATH, filePath, module], {
     encoding: "utf-8",
     timeout: PYTHON_SUBPROCESS_TIMEOUT_MS,
     maxBuffer: 50 * 1024 * 1024,
-  })
-  
+  });
+
   if (result.error) {
-    console.error(`[python-ast] spawn failed for ${filePath}:`, result.error.message)
-    return []
+    console.error(`[python-ast] spawn failed for ${filePath}:`, result.error.message);
+    return [];
   }
-  
+
   if (result.status !== 0) {
-    console.warn(`[python-ast] Python script failed for ${filePath} (exit code ${result.status})`)
+    console.warn(`[python-ast] Python script failed for ${filePath} (exit code ${result.status})`);
     if (result.stderr?.trim()) {
-      console.warn(`  stderr: ${result.stderr.trim().split("\n")[0]}`)  // First line only
+      console.warn(`  stderr: ${result.stderr.trim().split("\n")[0]}`); // First line only
     }
-    return []
+    return [];
   }
-  
+
   try {
-    const parsed = JSON.parse(result.stdout)
+    const parsed = JSON.parse(result.stdout);
     if (!Array.isArray(parsed)) {
-      console.warn(`[python-ast] unexpected output type for ${filePath}: ${typeof parsed}`)
-      return []
+      console.warn(`[python-ast] unexpected output type for ${filePath}: ${typeof parsed}`);
+      return [];
     }
-    return parsed
+    return parsed;
   } catch (e) {
-    console.error(`[python-ast] failed to parse JSON output for ${filePath}:`, e instanceof Error ? e.message : String(e))
-    return []
+    console.error(
+      `[python-ast] failed to parse JSON output for ${filePath}:`,
+      e instanceof Error ? e.message : String(e)
+    );
+    return [];
   }
 }
 ```
 
 And in the indexer, track errors separately:
+
 ```typescript
-const counters = { indexed: 0, skipped: 0, errors: 0, warnings: 0 }
+const counters = { indexed: 0, skipped: 0, errors: 0, warnings: 0 };
 // ...
 if (counters.errors > 0) {
-  console.warn(`[indexer] ${counters.errors} files failed to parse (see logs above)`)
+  console.warn(`[indexer] ${counters.errors} files failed to parse (see logs above)`);
 }
 ```
 
@@ -282,17 +311,19 @@ if (counters.errors > 0) {
 The `parsePythonRegex` function loops through the source file and, on each iteration, creates a new string via `src.slice(i)`. This is an O(n) operation done n times, resulting in O(n²) memory allocation and time complexity. On a 10MB file, this creates hundreds of MB of garbage and causes the process to stall.
 
 **Evidence**:
+
 ```typescript
 // src/parsers/python-regex.ts:49-50
 for (let i = 0; i < src.length; ) {
-  const match = src.slice(i).match(classNameRe)  // <-- O(n) allocation in loop
-  if (!match) break
+  const match = src.slice(i).match(classNameRe); // <-- O(n) allocation in loop
+  if (!match) break;
   // ...
-  i = startPos + match[0].length
+  i = startPos + match[0].length;
 }
 ```
 
 **Scenario**:
+
 ```
 File size: 10 MB
 Loop iterations: ~10 MB (worst case, one match per character)
@@ -302,31 +333,33 @@ Time: Minutes
 ```
 
 **Impact**:
+
 - Indexing large Python files (>10MB) becomes extremely slow and memory-hungry
 - Process may run out of memory or be killed by the OS
 
 **Fix** (Option 1: Use `lastIndex` on the original string):
+
 ```typescript
 function parsePythonRegex(filePath: string, module: string): ParsedItem[] {
-  const src = readFileSync(filePath, "utf-8")
-  const items: ParsedItem[] = []
-  
+  const src = readFileSync(filePath, "utf-8");
+  const items: ParsedItem[] = [];
+
   // Create regex with 'g' flag for stateful matching
-  const classNameRe = /^class\s+(\w+)\s*\(/gm
-  let match
-  
+  const classNameRe = /^class\s+(\w+)\s*\(/gm;
+  let match;
+
   while ((match = classNameRe.exec(src)) !== null) {
-    const className = match[1]
-    const classStartPos = match.index
+    const className = match[1];
+    const classStartPos = match.index;
     // ... extract class body, etc. ...
     items.push({
       itemType: "model",
       name: className,
       // ...
-    })
+    });
   }
-  
-  return items
+
+  return items;
 }
 ```
 
@@ -345,6 +378,7 @@ Since this file is dead code (never imported), consider removing it to reduce ma
 The Python script reads the entire file into memory with `Path(file_path).read_text(encoding='utf-8')`. There is no file size check. A user might index a massive auto-generated or corrupted file, and the Python process crashes with `MemoryError`. This error is then swallowed by the TypeScript `catch` block.
 
 **Evidence**:
+
 ```python
 # src/parsers/python_ast_extract.py:265
 source = Path(file_path).read_text(encoding='utf-8')
@@ -352,10 +386,12 @@ tree = ast.parse(source)
 ```
 
 **Impact**:
+
 - Indexing a directory with a huge file silently fails
 - Python process crashes with OOM; the error is hidden from the user
 
 **Fix**:
+
 ```python
 import sys
 from pathlib import Path
@@ -390,6 +426,7 @@ except UnicodeDecodeError:
 The code uses `fast-xml-parser` without explicitly disabling entity parsing. While v5.x disables it by default, the code does not enforce this contract. If OpenCode downgrades the dependency or if `fast-xml-parser` has a regression, malicious XML files could exploit billion-laughs or XXE vulnerabilities.
 
 **Evidence**:
+
 ```typescript
 // src/parsers/xml.ts:6-10
 const parser = new XMLParser({
@@ -397,10 +434,11 @@ const parser = new XMLParser({
   attributeNamePrefix: "@_",
   parseAttributeValue: false,
   // Missing: processEntities: false
-})
+});
 ```
 
 **Scenario**:
+
 ```xml
 <?xml version="1.0"?>
 <!DOCTYPE lolz [
@@ -413,18 +451,20 @@ const parser = new XMLParser({
 Parser memory explodes trying to expand nested entities.
 
 **Impact**:
+
 - Malicious XML in a module could crash indexing or the entire plugin
 - Denial-of-service attack surface
 
 **Fix**:
+
 ```typescript
 const parser = new XMLParser({
   ignoreAttributes: false,
   attributeNamePrefix: "@_",
   parseAttributeValue: false,
-  processEntities: false,        // Explicit disable
+  processEntities: false, // Explicit disable
   allowBooleanAttributes: true,
-})
+});
 ```
 
 ---
@@ -441,26 +481,29 @@ const parser = new XMLParser({
 When the Python subprocess exits with a non-zero status, the code only logs if `stderr` contains text. If Python crashes silently (segfault, OOM-killer, `SIGKILL` from timeout), there is NO log output.
 
 **Evidence**:
+
 ```typescript
 // src/parsers/python-ast.ts:27-32
 if (result.error || result.status !== 0) {
   if (result.stderr?.trim()) {
-    console.warn(`[python-ast] Python script failed for ${filePath}:`, result.stderr.trim())
+    console.warn(`[python-ast] Python script failed for ${filePath}:`, result.stderr.trim());
   }
-  return []
+  return [];
 }
 ```
 
 **Impact**:
+
 - Segfaults and OOM kills are completely silent
 - Users have no idea why indexing is failing
 
 **Fix**:
+
 ```typescript
 if (result.error || result.status !== 0) {
-  const msg = result.stderr?.trim() || `(exit code ${result.status}, no stderr)`
-  console.warn(`[python-ast] Python script failed for ${filePath}: ${msg}`)
-  return []
+  const msg = result.stderr?.trim() || `(exit code ${result.status}, no stderr)`;
+  console.warn(`[python-ast] Python script failed for ${filePath}: ${msg}`);
+  return [];
 }
 ```
 
@@ -482,14 +525,16 @@ Manifest parser mishandles brackets in strings — see **01-core-backend.md § 1
 The `extractStringField` function uses a simple regex that doesn't account for escaped quotes. A manifest with `'name': 'It\'s great'` will stop at the escaped quote.
 
 **Evidence**:
+
 ```typescript
 // src/parsers/manifest.ts:12-13
-new RegExp(`"${key}"\\s*:\\s*"([^"]*)"`).exec(src)
+new RegExp(`"${key}"\\s*:\\s*"([^"]*)"`).exec(src);
 // This regex stops at the first unescaped quote
 // But src.slice(0, -1) expects the LAST quote to close the string
 ```
 
 **Scenario**:
+
 ```python
 {
   "name": "My Module - It's Great",  # Contains apostrophe
@@ -500,29 +545,31 @@ new RegExp(`"${key}"\\s*:\\s*"([^"]*)"`).exec(src)
 ```
 
 **Impact**:
+
 - Module names are silently truncated
 - Manifest metadata is lost or corrupted
 
 **Fix**:
 Use proper string parsing logic (already covered in **01-core-backend.md**) or delegate to Python:
+
 ```typescript
 function extractStringField(src: string, key: string): string | null {
   // Match double-quoted strings with proper escape handling
-  const regex = new RegExp(`"${key}"\\s*:\\s*"((?:[^"\\]|\\.)*)"`)
-  const match = regex.exec(src)
+  const regex = new RegExp(`"${key}"\\s*:\\s*"((?:[^"\\]|\\.)*)"`);
+  const match = regex.exec(src);
   if (match) {
     // Unescape the string
-    return match[1].replace(/\\(.)/g, "$1")
+    return match[1].replace(/\\(.)/g, "$1");
   }
-  
+
   // Try single-quoted
-  const regexSingle = new RegExp(`'${key}'\\s*:\\s*'((?:[^'\\]|\\.)*)'`)
-  const matchSingle = regexSingle.exec(src)
+  const regexSingle = new RegExp(`'${key}'\\s*:\\s*'((?:[^'\\]|\\.)*)'`);
+  const matchSingle = regexSingle.exec(src);
   if (matchSingle) {
-    return matchSingle[1].replace(/\\(.)/g, "$1")
+    return matchSingle[1].replace(/\\(.)/g, "$1");
   }
-  
-  return null
+
+  return null;
 }
 ```
 
@@ -538,12 +585,14 @@ function extractStringField(src: string, key: string): string | null {
 The code looks up line numbers by searching for the XML ID string directly. If the same ID appears in a comment or attribute value before the actual definition, the wrong line is reported. It also only checks double quotes, missing single-quoted IDs.
 
 **Evidence**:
+
 ```typescript
 // src/parsers/xml.ts:24
-const idx = src.indexOf(id="${id}")
+const idx = src.indexOf((id = "${id}"));
 ```
 
 **Scenario**:
+
 ```xml
 <!-- Reference to view_id_001 in a comment -->
 <record id="view_id_001" model="ir.ui.view">
@@ -556,25 +605,27 @@ const idx = src.indexOf(id="${id}")
 Code finds the `id=` in the comment line, not the `<record>` definition line.
 
 **Impact**:
+
 - Reported line numbers are often incorrect
 - Makes debugging harder for users
 
 **Fix**:
+
 ```typescript
 function findLineNumber(src: string, id: string): number {
-  const lines = src.split('\n')
-  const idRegex = new RegExp(`id=["']${id.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}["']`)
-  
+  const lines = src.split("\n");
+  const idRegex = new RegExp(`id=["']${id.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}["']`);
+
   for (let i = 0; i < lines.length; i++) {
-    const line = lines[i]
+    const line = lines[i];
     // Skip comments
-    if (line.trim().startsWith('<!--')) continue
+    if (line.trim().startsWith("<!--")) continue;
     // Look for the actual id= attribute
     if (idRegex.test(line)) {
-      return i + 1  // 1-indexed
+      return i + 1; // 1-indexed
     }
   }
-  return 1
+  return 1;
 }
 ```
 
@@ -590,37 +641,42 @@ function findLineNumber(src: string, id: string): number {
 The CSV parser accepts unclosed quotes at EOF without warning. A malformed CSV ending with an open quote will push the incomplete field as a complete row.
 
 **Evidence**:
+
 ```typescript
 // src/parsers/csv.ts:43-46
 if (currentField || currentRow.length > 0) {
-  currentRow.push(currentField)
+  currentRow.push(currentField);
   // ^^ If currentField has an unclosed quote, it's still pushed
 }
 ```
 
 **Scenario**:
+
 ```csv
 "name","value"
 "item1","unclosed
 ```
 
 Parser output:
+
 ```
 ["item1", "unclosed"]  # Missing the closing quote
 ```
 
 **Impact**:
+
 - Malformed CSV data is indexed as valid
 - Data corruption is silent
 
 **Fix**:
+
 ```typescript
 if (inQuotes && !foundClosingQuote) {
-  throw new Error(`Unclosed quote in CSV at line ${lineNumber}`)
+  throw new Error(`Unclosed quote in CSV at line ${lineNumber}`);
 }
 
 if (currentField || currentRow.length > 0) {
-  currentRow.push(currentField)
+  currentRow.push(currentField);
 }
 ```
 
@@ -636,6 +692,7 @@ if (currentField || currentRow.length > 0) {
 The regex parser uses `exec()` without the `g` flag, so it always matches the first occurrence. If a class reassigns `_name` later, the parser uses the wrong value. Similarly, field comodel extraction captures any string argument, not specifically the first positional argument.
 
 **Evidence**:
+
 ```typescript
 // src/parsers/python-regex.ts:89-91
 const nameMatch = RE_NAME.exec(classBody)
@@ -647,6 +704,7 @@ const comodelMatch = fieldCtx.match(/fields\.\w+\s*\(\s*['"]([^'"]+)['"]/
 ```
 
 **Scenario**:
+
 ```python
 class MyModel(models.Model):
     _name = "my.model"
@@ -659,6 +717,7 @@ field = fields.Many2one("wrong.model", string="correct.model")
 ```
 
 **Impact**:
+
 - Field metadata is wrong or incomplete
 - Cross-references are broken
 
@@ -677,6 +736,7 @@ Since this is dead code (never used), delete it. Python AST parser is the correc
 If the Python script is invoked without proper CLI arguments, it exits with code 0 and prints an empty JSON array. This means packaging bugs or command-line errors are completely invisible — the script "succeeds" but produces no output.
 
 **Evidence**:
+
 ```python
 # src/parsers/python_ast_extract.py:307-308
 if len(sys.argv) < 3:
@@ -685,10 +745,12 @@ if len(sys.argv) < 3:
 ```
 
 **Impact**:
+
 - Invocation errors fail silently
 - Hard to debug if arguments are dropped or mangled
 
 **Fix**:
+
 ```python
 if len(sys.argv) < 3:
     print(f"Usage: {sys.argv[0]} <file_path> <module_name>", file=sys.stderr)
@@ -709,6 +771,7 @@ if len(sys.argv) < 3:
 The entire `python-regex.ts` file is never imported anywhere. It exists as a "fallback" parser that is never wired into the indexer. The file contains duplicated types (`PythonItem`, `PythonItemReference`) and duplicated utility functions.
 
 **Impact**:
+
 - Dead code increases maintenance burden
 - Bugs in dead code go unnoticed
 - Duplication means fixes need to be made twice
@@ -717,14 +780,15 @@ The entire `python-regex.ts` file is never imported anywhere. It exists as a "fa
 Option 1: Delete the file entirely. The Python AST parser is the correct approach.
 
 Option 2: If a fallback is desired, wire it into the indexer:
+
 ```typescript
 // src/indexer.ts
-let items: ParsedItem[] = []
+let items: ParsedItem[] = [];
 try {
-  items = parsePythonAst(f, opts.mod.name)
+  items = parsePythonAst(f, opts.mod.name);
 } catch (e) {
-  console.warn(`[indexer] AST parser failed for ${f}, trying regex fallback`)
-  items = parsePythonRegex(f, opts.mod.name)
+  console.warn(`[indexer] AST parser failed for ${f}, trying regex fallback`);
+  items = parsePythonRegex(f, opts.mod.name);
 }
 ```
 
@@ -742,25 +806,27 @@ Then fix all the bugs in `python-regex.ts` (O(n²), missing escape handling, etc
 `python-regex.ts` defines `PythonItem` and `PythonItemReference` which are nearly identical to `ParsedItem` and `ItemReference` in `types.ts`. The only difference is that `python-regex.ts` uses `any` instead of `unknown`, which is a type-safety downgrade.
 
 **Evidence**:
+
 ```typescript
 // python-regex.ts
 export interface PythonItem {
-  itemType: string
-  name: string
+  itemType: string;
+  name: string;
   // ... same fields ...
-  attributes: Record<string, any>  // <-- any instead of unknown
+  attributes: Record<string, any>; // <-- any instead of unknown
 }
 
 // types.ts
 export interface ParsedItem {
-  itemType: string
-  name: string
+  itemType: string;
+  name: string;
   // ... same fields ...
-  attributes: Record<string, any>
+  attributes: Record<string, any>;
 }
 ```
 
 **Impact**:
+
 - Type checking is inconsistent
 - Changes to `ParsedItem` must be mirrored in `PythonItem`
 - `any` allows unsafe operations
@@ -780,6 +846,7 @@ Delete `python-regex.ts` entirely, or refactor to reuse `ParsedItem`/`ItemRefere
 The `lineNumberAt` helper function is defined identically in both `python-regex.ts` and `utils.ts`. This is a maintenance burden — fixes must be made twice.
 
 **Impact**:
+
 - Duplication increases bugs
 - Harder to maintain
 
@@ -798,18 +865,21 @@ Delete from `python-regex.ts`, import from `utils.ts`.
 The Python script hardcodes `FIELD_TYPES` and `ODOO_BASES` sets. Custom field types (from `odoo-addons` or internal libraries) or custom model base classes are silently ignored.
 
 **Evidence**:
+
 ```python
 FIELD_TYPES = {'Char', 'Text', 'Integer', 'Float', ...}
 ODOO_BASES = {'models.Model', 'TransientModel', 'AbstractModel'}
 ```
 
 **Impact**:
+
 - Custom fields are not indexed
 - Custom base classes are not recognized
 - Incomplete indexing for non-standard Odoo codebases
 
 **Fix**:
 Make these configurable via CLI arguments or environment variables:
+
 ```python
 import os
 import json
@@ -833,6 +903,7 @@ ODOO_BASES = {'models.Model', ...} | set(CUSTOM_ODOO_BASES)
 The plugin manually implements markdown directory loading and YAML frontmatter parsing instead of using standard libraries.
 
 **Impact**:
+
 - Fragile to edge cases (Windows line endings, comments in YAML, etc.)
 - Maintenance burden
 
@@ -851,11 +922,13 @@ Use `gray-matter` for robust frontmatter parsing (already mentioned in plugin ar
 All XML element handlers declare their parameter as `el: any`, completely bypassing TypeScript's type system. Changes to `fast-xml-parser` output shape won't be caught at compile time.
 
 **Impact**:
+
 - Zero type safety for XML structure
 - Hard to debug shape mismatches
 
 **Fix**:
 Define a proper TypeScript interface for the XML structure:
+
 ```typescript
 interface XmlRecord {
   "@_id": string

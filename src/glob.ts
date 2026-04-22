@@ -9,8 +9,8 @@
  */
 export function globToRegex(pattern: string): RegExp {
   // Escape all regex metacharacters except * and ?
-  const escaped = pattern.replace(/[.+^${}()|[\]\\]/g, "\\$&")
+  const escaped = pattern.replace(/[.+^${}()|[\]\\]/g, "\\$&");
   // Convert glob wildcards to regex equivalents
-  const regexStr = escaped.replace(/\*/g, ".*").replace(/\?/g, ".")
-  return new RegExp(`^${regexStr}$`)
+  const regexStr = escaped.replace(/\*/g, ".*").replace(/\?/g, ".");
+  return new RegExp(`^${regexStr}$`);
 }

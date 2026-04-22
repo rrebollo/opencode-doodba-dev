@@ -1,17 +1,14 @@
-import { spawnSync } from "node:child_process"
-import { join, dirname } from "node:path"
-import { fileURLToPath } from "node:url"
-import type { ParsedItem } from "./types"
+import { spawnSync } from "node:child_process";
+import { join, dirname } from "node:path";
+import { fileURLToPath } from "node:url";
+import type { ParsedItem } from "./types";
 
-const PYTHON_BINARY = process.env.OPENCODE_PYTHON ?? "python3"
-const PYTHON_SUBPROCESS_TIMEOUT_MS = 10_000
+const PYTHON_BINARY = process.env.OPENCODE_PYTHON ?? "python3";
+const PYTHON_SUBPROCESS_TIMEOUT_MS = 10_000;
 // Timeout rationale: Python AST extraction is typically < 1s for most files,
 // but we allow 10s to handle large modules with extensive class hierarchies
 
-const SCRIPT_PATH = join(
-  dirname(fileURLToPath(import.meta.url)),
-  "python_ast_extract.py",
-)
+const SCRIPT_PATH = join(dirname(fileURLToPath(import.meta.url)), "python_ast_extract.py");
 
 /**
  * Parse a Python file using Python's ast module (via subprocess).
@@ -23,16 +20,16 @@ export function parsePythonAst(filePath: string, module: string): ParsedItem[] {
     const result = spawnSync(PYTHON_BINARY, [SCRIPT_PATH, filePath, module], {
       encoding: "utf-8",
       timeout: PYTHON_SUBPROCESS_TIMEOUT_MS,
-    })
+    });
     if (result.error || result.status !== 0) {
       if (result.stderr?.trim()) {
-        console.warn(`[python-ast] Python script failed for ${filePath}:`, result.stderr.trim())
+        console.warn(`[python-ast] Python script failed for ${filePath}:`, result.stderr.trim());
       }
-      return []
+      return [];
     }
-    const parsed = JSON.parse(result.stdout.trim() || "[]")
-    return Array.isArray(parsed) ? parsed : []
+    const parsed = JSON.parse(result.stdout.trim() || "[]");
+    return Array.isArray(parsed) ? parsed : [];
   } catch {
-    return []
+    return [];
   }
 }

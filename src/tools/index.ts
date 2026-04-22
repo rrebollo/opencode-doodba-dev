@@ -1,9 +1,7 @@
-import { existsSync, statSync } from "node:fs"
-import { homedir } from "node:os"
-import { join } from "node:path"
-import { tool, type ToolContext } from "@opencode-ai/plugin"
-import { globToRegex } from "../glob"
-import { getProjectDbPath, readState } from "../project-state"
+import { existsSync, statSync } from "node:fs";
+import { tool, type ToolContext } from "@opencode-ai/plugin";
+import { globToRegex } from "../glob";
+import { getProjectDbPath, readState } from "../project-state";
 import {
   ENTITY_TYPES,
   REF_ENTITY_TYPES,
@@ -12,8 +10,7 @@ import {
   formatResponse,
   resolveProjectDir,
   toErrorMessage,
-  withDb,
-} from "./helpers"
+} from "./helpers";
 
 export const doodbaTools = {
   doodba_search: tool({
@@ -21,10 +18,7 @@ export const doodbaTools = {
       "Search for Odoo models, fields, views, or methods in the index. Use the `type` parameter to filter by entity type (model/field/view/method/menuitem/xml_id). Use `parent` to scope fields to a specific model (e.g., parent='sale.order' to find fields on that model only).",
     args: {
       query: tool.schema.string().describe("Search term (model name, field name, etc.)"),
-      type: tool.schema
-        .enum(ENTITY_TYPES)
-        .optional()
-        .describe("Item type filter"),
+      type: tool.schema.enum(ENTITY_TYPES).optional().describe("Item type filter"),
       module: tool.schema.string().optional().describe("Filter by module name"),
       parent: tool.schema
         .string()
@@ -33,18 +27,15 @@ export const doodbaTools = {
       limit: tool.schema.number().optional().describe("Max results (default 50)"),
     },
     execute(args, context: ToolContext) {
-      return executeWithReadyCheck(
-        context.directory,
-        [],
-        (db) =>
-          db.search({
-            query: args.query,
-            itemType: args.type,
-            parentName: args.parent,
-            module: args.module,
-            limit: args.limit,
-          }),
-      )
+      return executeWithReadyCheck(context.directory, [], (db) =>
+        db.search({
+          query: args.query,
+          itemType: args.type,
+          parentName: args.parent,
+          module: args.module,
+          limit: args.limit,
+        })
+      );
     },
   }),
 
@@ -53,16 +44,12 @@ export const doodbaTools = {
       "Get detailed info about a specific Odoo entity. Returns field types, method signatures, view XML, or menuitem hierarchy depending on entity type.",
     args: {
       name: tool.schema.string().describe("Entity name (e.g., 'sale.order')"),
-      type: tool.schema
-        .enum(ENTITY_TYPES)
-        .describe("Entity type"),
+      type: tool.schema.enum(ENTITY_TYPES).describe("Entity type"),
     },
     execute(args, context: ToolContext) {
-      return executeWithReadyCheck(
-        context.directory,
-        null,
-        (db) => db.getDetails(args.name, args.type),
-      )
+      return executeWithReadyCheck(context.directory, null, (db) =>
+        db.getDetails(args.name, args.type)
+      );
     },
   }),
 
@@ -75,18 +62,14 @@ export const doodbaTools = {
         .describe("Optional glob-style filter (e.g., 'sale*')"),
     },
     execute(args, context: ToolContext) {
-      return executeWithReadyCheck(
-        context.directory,
-        [],
-        (db) => {
-          let modules = db.listModules()
-          if (args.pattern) {
-            const re = globToRegex(args.pattern)
-            modules = modules.filter((m) => re.test(m))
-          }
-          return modules
-        },
-      )
+      return executeWithReadyCheck(context.directory, [], (db) => {
+        let modules = db.listModules();
+        if (args.pattern) {
+          const re = globToRegex(args.pattern);
+          modules = modules.filter((m) => re.test(m));
+        }
+        return modules;
+      });
     },
   }),
 
@@ -94,11 +77,7 @@ export const doodbaTools = {
     description: "Get item count statistics for an Odoo module.",
     args: { module: tool.schema.string().describe("Module name") },
     execute(args, context: ToolContext) {
-      return executeWithReadyCheck(
-        context.directory,
-        {},
-        (db) => db.moduleStats(args.module),
-      )
+      return executeWithReadyCheck(context.directory, {}, (db) => db.moduleStats(args.module));
     },
   }),
 
@@ -110,11 +89,9 @@ export const doodbaTools = {
       type: tool.schema.enum(REF_ENTITY_TYPES).describe("Entity type"),
     },
     execute(args, context: ToolContext) {
-      return executeWithReadyCheck(
-        context.directory,
-        [],
-        (db) => db.findRefs(args.name, args.type),
-      )
+      return executeWithReadyCheck(context.directory, [], (db) =>
+        db.findRefs(args.name, args.type)
+      );
     },
   }),
 
@@ -128,19 +105,15 @@ export const doodbaTools = {
       module: tool.schema.string().optional().describe("Filter by module"),
     },
     execute(args, context: ToolContext) {
-      return executeWithReadyCheck(
-        context.directory,
-        [],
-        (db) => {
-          let filters: Record<string, any>
-          try {
-            filters = JSON.parse(args.filters)
-          } catch {
-            throw new Error("Error: filters must be valid JSON")
-          }
-          return db.searchByAttr(args.type, filters, args.module)
-        },
-      )
+      return executeWithReadyCheck(context.directory, [], (db) => {
+        let filters: Record<string, unknown>;
+        try {
+          filters = JSON.parse(args.filters);
+        } catch {
+          throw new Error("Error: filters must be valid JSON");
+        }
+        return db.searchByAttr(args.type, filters, args.module);
+      });
     },
   }),
 
@@ -152,11 +125,9 @@ export const doodbaTools = {
       limit: tool.schema.number().optional().describe("Max results"),
     },
     execute(args, context: ToolContext) {
-      return executeWithReadyCheck(
-        context.directory,
-        [],
-        (db) => db.searchXmlId(args.query, args.module, args.limit),
-      )
+      return executeWithReadyCheck(context.directory, [], (db) =>
+        db.searchXmlId(args.query, args.module, args.limit)
+      );
     },
   }),
 
@@ -166,7 +137,7 @@ export const doodbaTools = {
       paths: tool.schema
         .string()
         .describe(
-          "Comma-separated root paths to index (e.g., /path/to/odoo/addons,/path/to/custom/addons)",
+          "Comma-separated root paths to index (e.g., /path/to/odoo/addons,/path/to/custom/addons)"
         ),
       modules: tool.schema
         .string()
@@ -180,13 +151,21 @@ export const doodbaTools = {
         const rootPaths = args.paths
           .split(",")
           .map((p) => p.trim())
-          .filter(Boolean)
+          .filter(Boolean);
         for (const p of rootPaths) {
           if (!existsSync(p) || !statSync(p).isDirectory()) {
-            return formatResponse("FAILED", [], `Error: "${p}" does not exist or is not a directory`)
+            return formatResponse(
+              "FAILED",
+              [],
+              `Error: "${p}" does not exist or is not a directory`
+            );
           }
           if (BLOCKED_ROOTS.includes(p)) {
-            return formatResponse("FAILED", [], `Error: "${p}" is too broad. Provide a specific Odoo module or project directory.`)
+            return formatResponse(
+              "FAILED",
+              [],
+              `Error: "${p}" is too broad. Provide a specific Odoo module or project directory.`
+            );
           }
         }
         const modules = args.modules
@@ -194,13 +173,22 @@ export const doodbaTools = {
               .split(",")
               .map((m) => m.trim())
               .filter(Boolean)
-          : undefined
-        const { indexModules } = await import("../indexer")
-        const resolved = resolveProjectDir(context.directory)
-        const result = indexModules({ rootPaths, modules, full: args.full, dbPath: getProjectDbPath(resolved) })
-        return formatResponse("READY", result, `Index updated: ${result.indexed} files indexed, ${result.skipped} skipped (unchanged), ${result.errors} errors`)
+          : undefined;
+        const { indexModules } = await import("../indexer");
+        const resolved = resolveProjectDir(context.directory);
+        const result = indexModules({
+          rootPaths,
+          modules,
+          full: args.full,
+          dbPath: getProjectDbPath(resolved),
+        });
+        return formatResponse(
+          "READY",
+          result,
+          `Index updated: ${result.indexed} files indexed, ${result.skipped} skipped (unchanged), ${result.errors} errors`
+        );
       } catch (e) {
-        return formatResponse("FAILED", [], toErrorMessage(e))
+        return formatResponse("FAILED", [], toErrorMessage(e));
       }
     },
   }),
@@ -211,16 +199,16 @@ export const doodbaTools = {
     execute(_args, context: ToolContext) {
       return executeWithReadyCheck(
         context.directory,
-        {},
+        { missingDeps: [], totalItems: 0, totalModules: 0, lastIndexed: null },
         (db, projectDir) => {
-          const state = readState(projectDir)
-          const dbStatus = db.indexStatus()
+          const state = readState(projectDir);
+          const dbStatus = db.indexStatus();
           return {
             ...dbStatus,
             missingDeps: state.missingDeps,
-          }
-        },
-      )
+          };
+        }
+      );
     },
   }),
-}
+};

@@ -1,28 +1,28 @@
-import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from "node:fs"
-import { tmpdir } from "node:os"
-import { join } from "node:path"
+import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 export interface TestFixture {
-  rootDir: string
-  doodbaRoot: string
-  sourcePaths: string[]
-  dbPath: string
+  rootDir: string;
+  doodbaRoot: string;
+  sourcePaths: string[];
+  dbPath: string;
 }
 
 export function createTestFixture(): TestFixture {
-  const rootDir = mkdtempSync(join(tmpdir(), "opencode-doodba-dev-e2e-"))
-  const doodbaRoot = rootDir
-  const srcDir = join(doodbaRoot, "odoo", "custom", "src")
+  const rootDir = mkdtempSync(join(tmpdir(), "opencode-doodba-dev-e2e-"));
+  const doodbaRoot = rootDir;
+  const srcDir = join(doodbaRoot, "odoo", "custom", "src");
 
   // .copier-answers.yml marker
-  writeFileSync(join(doodbaRoot, ".copier-answers.yml"), "")
+  writeFileSync(join(doodbaRoot, ".copier-answers.yml"), "");
 
   // === Odoo core repository ===
-  const odooRepo = join(srcDir, "odoo")
+  const odooRepo = join(srcDir, "odoo");
 
   // base addon (inside odoo/addons/)
-  const baseDir = join(odooRepo, "odoo", "addons", "base")
-  mkdirSync(baseDir, { recursive: true })
+  const baseDir = join(odooRepo, "odoo", "addons", "base");
+  mkdirSync(baseDir, { recursive: true });
   writeFileSync(
     join(baseDir, "__manifest__.py"),
     `{
@@ -31,8 +31,8 @@ export function createTestFixture(): TestFixture {
   "depends": [],
   "data": ["views/res_partner_views.xml"]
 }`
-  )
-  mkdirSync(join(baseDir, "models"), { recursive: true })
+  );
+  mkdirSync(join(baseDir, "models"), { recursive: true });
   writeFileSync(
     join(baseDir, "models", "res_partner.py"),
     `from odoo import models, fields
@@ -48,8 +48,8 @@ class ResPartner(models.Model):
     phone = fields.Char(string="Phone")
     street = fields.Char(string="Street")
 `
-  )
-  mkdirSync(join(baseDir, "views"), { recursive: true })
+  );
+  mkdirSync(join(baseDir, "views"), { recursive: true });
   writeFileSync(
     join(baseDir, "views", "res_partner_views.xml"),
     `<?xml version="1.0" encoding="UTF-8"?>
@@ -70,11 +70,11 @@ class ResPartner(models.Model):
         </field>
     </record>
 </odoo>`
-  )
+  );
 
   // sale addon (inside addons/ — fallback location)
-  const saleDir = join(odooRepo, "addons", "sale")
-  mkdirSync(saleDir, { recursive: true })
+  const saleDir = join(odooRepo, "addons", "sale");
+  mkdirSync(saleDir, { recursive: true });
   writeFileSync(
     join(saleDir, "__manifest__.py"),
     `{
@@ -83,8 +83,8 @@ class ResPartner(models.Model):
   "depends": ["base"],
   "data": ["views/sale_order_views.xml"]
 }`
-  )
-  mkdirSync(join(saleDir, "models"), { recursive: true })
+  );
+  mkdirSync(join(saleDir, "models"), { recursive: true });
   writeFileSync(
     join(saleDir, "models", "sale_order.py"),
     `from odoo import models, fields
@@ -105,8 +105,8 @@ class SaleOrder(models.Model):
     ], string="Status", default="draft")
     date_order = fields.Datetime(string="Order Date")
 `
-  )
-  mkdirSync(join(saleDir, "views"), { recursive: true })
+  );
+  mkdirSync(join(saleDir, "views"), { recursive: true });
   writeFileSync(
     join(saleDir, "views", "sale_order_views.xml"),
     `<?xml version="1.0" encoding="UTF-8"?>
@@ -128,14 +128,14 @@ class SaleOrder(models.Model):
         </field>
     </record>
 </odoo>`
-  )
+  );
 
   // === Custom repository (normal structure) ===
-  const customRepo = join(srcDir, "custom-repo")
+  const customRepo = join(srcDir, "custom-repo");
 
   // partner_firstname addon
-  const partnerDir = join(customRepo, "partner_firstname")
-  mkdirSync(partnerDir, { recursive: true })
+  const partnerDir = join(customRepo, "partner_firstname");
+  mkdirSync(partnerDir, { recursive: true });
   writeFileSync(
     join(partnerDir, "__manifest__.py"),
     `{
@@ -144,8 +144,8 @@ class SaleOrder(models.Model):
   "depends": ["base"],
   "data": []
 }`
-  )
-  mkdirSync(join(partnerDir, "models"), { recursive: true })
+  );
+  mkdirSync(join(partnerDir, "models"), { recursive: true });
   writeFileSync(
     join(partnerDir, "models", "res_partner.py"),
     `from odoo import models, fields
@@ -156,11 +156,11 @@ class ResPartner(models.Model):
     firstname = fields.Char(string="First Name")
     lastname = fields.Char(string="Last Name")
 `
-  )
+  );
 
   // my_module addon (depends on sale + partner_firstname)
-  const myModuleDir = join(customRepo, "my_module")
-  mkdirSync(myModuleDir, { recursive: true })
+  const myModuleDir = join(customRepo, "my_module");
+  mkdirSync(myModuleDir, { recursive: true });
   writeFileSync(
     join(myModuleDir, "__manifest__.py"),
     `{
@@ -169,8 +169,8 @@ class ResPartner(models.Model):
   "depends": ["sale", "partner_firstname"],
   "data": ["views/my_views.xml"]
 }`
-  )
-  mkdirSync(join(myModuleDir, "models"), { recursive: true })
+  );
+  mkdirSync(join(myModuleDir, "models"), { recursive: true });
   writeFileSync(
     join(myModuleDir, "models", "my_model.py"),
     `from odoo import models, fields
@@ -184,11 +184,11 @@ class MyModel(models.Model):
     quantity = fields.Integer(string="Quantity", default=1)
     price = fields.Float(string="Price")
 `
-  )
+  );
 
   // partner_category addon (tests multi-class fixture - catches class-body boundary bugs)
-  const partnerCategoryDir = join(customRepo, "partner_category")
-  mkdirSync(partnerCategoryDir, { recursive: true })
+  const partnerCategoryDir = join(customRepo, "partner_category");
+  mkdirSync(partnerCategoryDir, { recursive: true });
   writeFileSync(
     join(partnerCategoryDir, "__manifest__.py"),
     `{
@@ -197,8 +197,8 @@ class MyModel(models.Model):
   "depends": ["base"],
   "data": []
 }`
-  )
-  mkdirSync(join(partnerCategoryDir, "models"), { recursive: true })
+  );
+  mkdirSync(join(partnerCategoryDir, "models"), { recursive: true });
   writeFileSync(
     join(partnerCategoryDir, "models", "res_partner_category.py"),
     `from odoo import models, fields
@@ -220,8 +220,8 @@ class PartnerCategoryHelper(models.TransientModel):
     partner_ids = fields.Many2many("res.partner", string="Partners")
     notes = fields.Text(string="Notes")
 `
-  )
-  mkdirSync(join(myModuleDir, "views"), { recursive: true })
+  );
+  mkdirSync(join(myModuleDir, "views"), { recursive: true });
   writeFileSync(
     join(myModuleDir, "views", "my_views.xml"),
     `<?xml version="1.0" encoding="UTF-8"?>
@@ -238,21 +238,21 @@ class PartnerCategoryHelper(models.TransientModel):
         </field>
     </record>
 </odoo>`
-  )
+  );
 
   // === Database path ===
-  const dbDir = join(rootDir, ".opencode", "doodba-dev")
-  mkdirSync(dbDir, { recursive: true })
-  const dbPath = join(dbDir, "index.db")
+  const dbDir = join(rootDir, ".opencode", "doodba-dev");
+  mkdirSync(dbDir, { recursive: true });
+  const dbPath = join(dbDir, "index.db");
 
   return {
     rootDir,
     doodbaRoot,
     sourcePaths: [odooRepo, customRepo],
     dbPath,
-  }
+  };
 }
 
 export function destroyTestFixture(fixture: TestFixture): void {
-  rmSync(fixture.rootDir, { recursive: true })
+  rmSync(fixture.rootDir, { recursive: true });
 }

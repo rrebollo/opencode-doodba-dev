@@ -1,19 +1,35 @@
-import { readFileSync } from "node:fs"
-import { XMLParser } from "fast-xml-parser"
-import type { ParsedItem, ItemReference } from "./types"
-import { qualifyXmlId, lineNumberAt, toArray } from "./utils"
+import { readFileSync } from "node:fs";
+import { XMLParser } from "fast-xml-parser";
+import type { ParsedItem, ItemReference } from "./types";
+import { qualifyXmlId, lineNumberAt, toArray } from "./utils";
 
 const parser = new XMLParser({
   ignoreAttributes: false,
   attributeNamePrefix: "@_",
   parseAttributeValue: false,
-  processEntities: false,  // Prevent XXE / billion-laughs attacks
-})
+  processEntities: false, // Prevent XXE / billion-laughs attacks
+});
+
+interface XmlElement {
+  ["@_id"]?: string;
+  ["@_model"]?: string;
+  ["@_name"]?: string;
+  ["@_ref"]?: string;
+  ["@_parent"]?: string;
+  ["@_action"]?: string;
+  ["@_groups"]?: string;
+  ["@_inherit_id"]?: string;
+  ["@_res_model"]?: string;
+  ["@_view_mode"]?: string;
+  ["@_domain"]?: string;
+  field?: XmlElement | XmlElement[];
+  "#text"?: string;
+}
 
 function itemTypeFromModel(model: string): string {
-  if (model === "ir.ui.view") return "view"
-  if (model === "ir.ui.menu") return "menuitem"
-  return "record"
+  if (model === "ir.ui.view") return "view";
+  if (model === "ir.ui.menu") return "menuitem";
+  return "record";
 }
 
 function makeDefinitionRef(
@@ -22,37 +38,37 @@ function makeDefinitionRef(
   id: string,
   context: string
 ): ItemReference {
-  const idx = src.indexOf(`id="${id}"`)
-  const lineNumber = idx === -1 ? 0 : lineNumberAt(src, idx)
+  const idx = src.indexOf(`id="${id}"`);
+  const lineNumber = idx === -1 ? 0 : lineNumberAt(src, idx);
   return {
     filePath,
     lineNumber,
     referenceType: "definition",
     context,
-  }
+  };
 }
 
 type ElementHandler = (
-  el: any,
+  el: XmlElement,
   module: string,
   filePath: string,
   src: string
-) => ParsedItem | null
+) => ParsedItem | null;
 
 function handleRecord(
-  el: any,
+  el: XmlElement,
   module: string,
   filePath: string,
   src: string
 ): ParsedItem | null {
-  const id = el["@_id"] ?? ""
-  if (!id) return null
-  const model = el["@_model"] ?? ""
-  const xmlId = qualifyXmlId(id, module)
-  const fields: Record<string, any> = {}
-  const fieldArr = toArray(el.field)
+  const id = el["@_id"] ?? "";
+  if (!id) return null;
+  const model = el["@_model"] ?? "";
+  const xmlId = qualifyXmlId(id, module);
+  const fields: Record<string, unknown> = {};
+  const fieldArr = toArray(el.field);
   for (const f of fieldArr) {
-    if (f["@_name"]) fields[f["@_name"]] = f["@_ref"] ?? f["#text"] ?? ""
+    if (f["@_name"]) fields[f["@_name"]] = f["@_ref"] ?? f["#text"] ?? "";
   }
   return {
     itemType: itemTypeFromModel(model),
@@ -61,18 +77,18 @@ function handleRecord(
     module,
     attributes: { model, ...fields },
     references: [makeDefinitionRef(filePath, src, id, `<record id="${id}" model="${model}">`)],
-  }
+  };
 }
 
 function handleMenuitem(
-  el: any,
+  el: XmlElement,
   module: string,
   filePath: string,
   src: string
 ): ParsedItem | null {
-  const id = el["@_id"] ?? ""
-  if (!id) return null
-  const xmlId = qualifyXmlId(id, module)
+  const id = el["@_id"] ?? "";
+  if (!id) return null;
+  const xmlId = qualifyXmlId(id, module);
   return {
     itemType: "menuitem",
     name: xmlId,
@@ -84,37 +100,37 @@ function handleMenuitem(
       groups: el["@_groups"] ?? "",
     },
     references: [makeDefinitionRef(filePath, src, id, `<menuitem id="${id}">`)],
-  }
+  };
 }
 
 function handleTemplate(
-  el: any,
+  el: XmlElement,
   module: string,
   filePath: string,
   src: string
 ): ParsedItem | null {
-  const id = el["@_id"] ?? ""
-  if (!id) return null
-  const xmlId = qualifyXmlId(id, module)
+  const id = el["@_id"] ?? "";
+  if (!id) return null;
+  const xmlId = qualifyXmlId(id, module);
   return {
     itemType: "view",
     name: xmlId,
     parentName: el["@_inherit_id"] ?? null,
     module,
     attributes: { name: el["@_name"] ?? "", inherit_id: el["@_inherit_id"] ?? "" },
-    references: [makeDefinitionRef(filePath, src, id, `<template id="${id}>`)],
-  }
+    references: [makeDefinitionRef(filePath, src, id, `<template id="${id}">`)],
+  };
 }
 
 function handleActWindow(
-  el: any,
+  el: XmlElement,
   module: string,
   filePath: string,
   src: string
 ): ParsedItem | null {
-  const id = el["@_id"] ?? ""
-  if (!id) return null
-  const xmlId = qualifyXmlId(id, module)
+  const id = el["@_id"] ?? "";
+  if (!id) return null;
+  const xmlId = qualifyXmlId(id, module);
   return {
     itemType: "record",
     name: xmlId,
@@ -126,8 +142,8 @@ function handleActWindow(
       view_mode: el["@_view_mode"] ?? "",
       domain: el["@_domain"] ?? "",
     },
-    references: [makeDefinitionRef(filePath, src, id, `<act_window id="${id}>`)],
-  }
+    references: [makeDefinitionRef(filePath, src, id, `<act_window id="${id}">`)],
+  };
 }
 
 const ELEMENT_HANDLERS: Record<string, ElementHandler> = {
@@ -135,25 +151,25 @@ const ELEMENT_HANDLERS: Record<string, ElementHandler> = {
   menuitem: handleMenuitem,
   template: handleTemplate,
   act_window: handleActWindow,
-}
+};
 
 export function parseXml(filePath: string, module: string): ParsedItem[] {
-  const items: ParsedItem[] = []
+  const items: ParsedItem[] = [];
   try {
-    const src = readFileSync(filePath, "utf-8")
-    const doc = parser.parse(src)
-    const data = doc?.odoo?.data ?? {}
+    const src = readFileSync(filePath, "utf-8");
+    const doc = parser.parse(src);
+    const data = doc?.odoo?.data ?? {};
 
     // Iterate over element handlers
     for (const [elementName, handler] of Object.entries(ELEMENT_HANDLERS)) {
-      const elements = toArray(data[elementName])
+      const elements = toArray(data[elementName]);
       for (const el of elements) {
-        const item = handler(el, module, filePath, src)
-        if (item) items.push(item)
+        const item = handler(el, module, filePath, src);
+        if (item) items.push(item);
       }
     }
   } catch (err) {
-    console.warn(`[xml] Failed to parse ${filePath}:`, err)
+    console.warn(`[xml] Failed to parse ${filePath}:`, err);
   }
-  return items
+  return items;
 }
