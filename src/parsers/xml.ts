@@ -1,15 +1,7 @@
 import { readFileSync } from "node:fs"
 import { XMLParser } from "fast-xml-parser"
-import type { PythonItemReference } from "./python-regex"
-
-export interface XmlItem {
-  itemType: string
-  name: string
-  parentName: string | null
-  module: string
-  attributes: Record<string, any>
-  references?: PythonItemReference[]
-}
+import type { ParsedItem, ItemReference } from "./types"
+import { qualifyXmlId, lineNumberAt, toArray } from "./utils"
 
 const parser = new XMLParser({
   ignoreAttributes: false,
@@ -23,128 +15,144 @@ function itemTypeFromModel(model: string): string {
   return "record"
 }
 
-function lineNumberOf(src: string, searchStr: string): number {
-  const idx = src.indexOf(searchStr)
-  if (idx === -1) return 0
-  return src.slice(0, idx).split('\n').length
+function makeDefinitionRef(
+  filePath: string,
+  src: string,
+  id: string,
+  context: string
+): ItemReference {
+  const idx = src.indexOf(`id="${id}"`)
+  const lineNumber = idx === -1 ? 0 : lineNumberAt(src, idx)
+  return {
+    filePath,
+    lineNumber,
+    referenceType: "definition",
+    context,
+  }
 }
 
-export function parseXml(filePath: string, module: string): XmlItem[] {
-  const items: XmlItem[] = []
+type ElementHandler = (
+  el: any,
+  module: string,
+  filePath: string,
+  src: string
+) => ParsedItem | null
+
+function handleRecord(
+  el: any,
+  module: string,
+  filePath: string,
+  src: string
+): ParsedItem | null {
+  const id = el["@_id"] ?? ""
+  if (!id) return null
+  const model = el["@_model"] ?? ""
+  const xmlId = qualifyXmlId(id, module)
+  const fields: Record<string, any> = {}
+  const fieldArr = toArray(el.field)
+  for (const f of fieldArr) {
+    if (f["@_name"]) fields[f["@_name"]] = f["@_ref"] ?? f["#text"] ?? ""
+  }
+  return {
+    itemType: itemTypeFromModel(model),
+    name: xmlId,
+    parentName: null,
+    module,
+    attributes: { model, ...fields },
+    references: [makeDefinitionRef(filePath, src, id, `<record id="${id}" model="${model}">`)],
+  }
+}
+
+function handleMenuitem(
+  el: any,
+  module: string,
+  filePath: string,
+  src: string
+): ParsedItem | null {
+  const id = el["@_id"] ?? ""
+  if (!id) return null
+  const xmlId = qualifyXmlId(id, module)
+  return {
+    itemType: "menuitem",
+    name: xmlId,
+    parentName: el["@_parent"] ?? null,
+    module,
+    attributes: {
+      name: el["@_name"] ?? "",
+      action: el["@_action"] ?? "",
+      groups: el["@_groups"] ?? "",
+    },
+    references: [makeDefinitionRef(filePath, src, id, `<menuitem id="${id}">`)],
+  }
+}
+
+function handleTemplate(
+  el: any,
+  module: string,
+  filePath: string,
+  src: string
+): ParsedItem | null {
+  const id = el["@_id"] ?? ""
+  if (!id) return null
+  const xmlId = qualifyXmlId(id, module)
+  return {
+    itemType: "view",
+    name: xmlId,
+    parentName: el["@_inherit_id"] ?? null,
+    module,
+    attributes: { name: el["@_name"] ?? "", inherit_id: el["@_inherit_id"] ?? "" },
+    references: [makeDefinitionRef(filePath, src, id, `<template id="${id}>`)],
+  }
+}
+
+function handleActWindow(
+  el: any,
+  module: string,
+  filePath: string,
+  src: string
+): ParsedItem | null {
+  const id = el["@_id"] ?? ""
+  if (!id) return null
+  const xmlId = qualifyXmlId(id, module)
+  return {
+    itemType: "record",
+    name: xmlId,
+    parentName: null,
+    module,
+    attributes: {
+      name: el["@_name"] ?? "",
+      res_model: el["@_res_model"] ?? "",
+      view_mode: el["@_view_mode"] ?? "",
+      domain: el["@_domain"] ?? "",
+    },
+    references: [makeDefinitionRef(filePath, src, id, `<act_window id="${id}>`)],
+  }
+}
+
+const ELEMENT_HANDLERS: Record<string, ElementHandler> = {
+  record: handleRecord,
+  menuitem: handleMenuitem,
+  template: handleTemplate,
+  act_window: handleActWindow,
+}
+
+export function parseXml(filePath: string, module: string): ParsedItem[] {
+  const items: ParsedItem[] = []
   try {
     const src = readFileSync(filePath, "utf-8")
     const doc = parser.parse(src)
     const data = doc?.odoo?.data ?? {}
 
-    // Helper function to qualify XML IDs
-    const qualifyId = (id: string): string => (id.includes(".") ? id : `${module}.${id}`)
-
-    // Process records
-    if (data.record) {
-      const records = Array.isArray(data.record) ? data.record : [data.record]
-      for (const rec of records) {
-        const id = rec["@_id"] ?? ""
-        const model = rec["@_model"] ?? ""
-        if (!id) continue
-        const xmlId = qualifyId(id)
-        const fields: Record<string, any> = {}
-        const fieldArr = Array.isArray(rec.field) ? rec.field : rec.field ? [rec.field] : []
-        for (const f of fieldArr) {
-          if (f["@_name"]) fields[f["@_name"]] = f["@_ref"] ?? f["#text"] ?? ""
-        }
-         items.push({
-           itemType: itemTypeFromModel(model),
-           name: xmlId,
-           parentName: null,
-           module,
-           attributes: { model, ...fields },
-           references: [{
-             filePath,
-             lineNumber: lineNumberOf(src, `id="${id}"`),
-             referenceType: "definition" as const,
-             context: `<record id="${id}" model="${model}">`,
-           }],
-         })
+    // Iterate over element handlers
+    for (const [elementName, handler] of Object.entries(ELEMENT_HANDLERS)) {
+      const elements = toArray(data[elementName])
+      for (const el of elements) {
+        const item = handler(el, module, filePath, src)
+        if (item) items.push(item)
       }
     }
-
-    // Process menuitems
-    if (data.menuitem) {
-      const menus = Array.isArray(data.menuitem) ? data.menuitem : [data.menuitem]
-      for (const m of menus) {
-        const id = m["@_id"] ?? ""
-        if (!id) continue
-        const xmlId = qualifyId(id)
-         items.push({
-           itemType: "menuitem",
-           name: xmlId,
-           parentName: m["@_parent"] ?? null,
-           module,
-           attributes: {
-             name: m["@_name"] ?? "",
-             action: m["@_action"] ?? "",
-             groups: m["@_groups"] ?? "",
-           },
-           references: [{
-             filePath,
-             lineNumber: lineNumberOf(src, `id="${id}"`),
-             referenceType: "definition" as const,
-             context: `<menuitem id="${id}">`,
-           }],
-         })
-      }
-    }
-
-    // Process templates (OWL/QWeb templates)
-    if (data.template) {
-      const templates = Array.isArray(data.template) ? data.template : [data.template]
-      for (const t of templates) {
-        const id = t["@_id"] ?? ""
-        if (!id) continue
-        const xmlId = qualifyId(id)
-         items.push({
-           itemType: "view",
-           name: xmlId,
-           parentName: t["@_inherit_id"] ?? null,
-           module,
-           attributes: { name: t["@_name"] ?? "", inherit_id: t["@_inherit_id"] ?? "" },
-           references: [{
-             filePath,
-             lineNumber: lineNumberOf(src, `id="${id}"`),
-             referenceType: "definition" as const,
-             context: `<template id="${id}">`,
-           }],
-         })
-      }
-    }
-
-    // Process act_window declarations
-    if (data.act_window) {
-      const acts = Array.isArray(data.act_window) ? data.act_window : [data.act_window]
-      for (const a of acts) {
-        const id = a["@_id"] ?? ""
-        if (!id) continue
-        const xmlId = qualifyId(id)
-         items.push({
-           itemType: "record",
-           name: xmlId,
-           parentName: null,
-           module,
-           attributes: {
-             name: a["@_name"] ?? "",
-             res_model: a["@_res_model"] ?? "",
-             view_mode: a["@_view_mode"] ?? "",
-             domain: a["@_domain"] ?? "",
-           },
-           references: [{
-             filePath,
-             lineNumber: lineNumberOf(src, `id="${id}"`),
-             referenceType: "definition" as const,
-             context: `<act_window id="${id}">`,
-           }],
-         })
-      }
-    }
-  } catch {}
+  } catch (err) {
+    console.warn(`[xml] Failed to parse ${filePath}:`, err)
+  }
   return items
 }
