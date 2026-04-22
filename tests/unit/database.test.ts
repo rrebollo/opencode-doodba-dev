@@ -61,3 +61,24 @@ describe("search default limit", () => {
     expect(results.length).toBe(50); // DEFAULT_SEARCH_LIMIT
   });
 });
+
+describe("null parent_name uniqueness", () => {
+  test("duplicate items with null parent_name should not be stored", () => {
+    // Insert first item with null parent_name
+    db.upsertItem("model", "res.users", null, "base", { foo: "bar" }, 0);
+    // Insert identical item except with different attributes (simulating second upsert)
+    db.upsertItem("model", "res.users", null, "base", { baz: "qux" }, 0);
+
+    // Search for the item by type, name, and module
+    const results = db.search({
+      itemType: "model",
+      query: "res.users",
+      module: "base",
+    });
+
+    // Should have only 1 row (deduped)
+    expect(results).toHaveLength(1);
+    // Should reflect the second (last) upsert
+    expect(results[0].attributes).toEqual({ baz: "qux" });
+  });
+});
