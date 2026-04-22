@@ -59,12 +59,38 @@ export function checkReady(contextDir: string): ReadyResult {
 }
 
 export function withDb<T>(projectDir: string, fn: (db: DoodbaIndexDatabase) => T): T {
+  if ((fn as any).constructor?.name === 'AsyncFunction') {
+    throw new Error(
+      'withDb does not support async callbacks. Use withDbAsync() instead.'
+    )
+  }
   const dbPath = getProjectDbPath(projectDir)
   const db = new DoodbaIndexDatabase(dbPath)
   try {
     return fn(db)
   } finally {
-    db.close()
+    try {
+      db.close()
+    } catch (e) {
+      console.error(`[withDb] failed to close database: ${e}`)
+    }
+  }
+}
+
+export async function withDbAsync<T>(
+  projectDir: string,
+  fn: (db: DoodbaIndexDatabase) => Promise<T>
+): Promise<T> {
+  const dbPath = getProjectDbPath(projectDir)
+  const db = new DoodbaIndexDatabase(dbPath)
+  try {
+    return await fn(db)
+  } finally {
+    try {
+      db.close()
+    } catch (e) {
+      console.error(`[withDbAsync] failed to close database: ${e}`)
+    }
   }
 }
 
@@ -76,7 +102,7 @@ export async function executeWithReadyCheck<T>(
   const ready = checkReady(contextDir)
   if (!ready.ready) return formatResponse(ready.status, emptyResult, ready.message)
   try {
-    const result = await Promise.resolve(withDb(ready.projectDir, (db) => fn(db, ready.projectDir)))
+    const result = await withDbAsync(ready.projectDir, (db) => Promise.resolve(fn(db, ready.projectDir)))
     return formatResponse("READY", result)
   } catch (e) {
     return formatResponse("FAILED", emptyResult, toErrorMessage(e))

@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs"
+import { existsSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
 
 export type IndexerStateStatus = "NO_PROJECT" | "INDEXING" | "READY" | "FAILED"
@@ -56,18 +56,37 @@ export function readState(projectDir: string): IndexerState {
 }
 
 export function updateState(projectDir: string, partial: Partial<IndexerState>): void {
-  const dir = getPluginDir(projectDir)
-  mkdirSync(dir, { recursive: true })
-  const statePath = join(dir, STATE_FILE_NAME)
+  const stateDir = getPluginDir(projectDir)
+  const statePath = join(stateDir, STATE_FILE_NAME)
+  const tmpPath = statePath + ".tmp"
+
+  // Ensure directory exists
+  if (!existsSync(stateDir)) {
+    mkdirSync(stateDir, { recursive: true })
+  }
+
+  // Read current state
   let current = { ...DEFAULT_STATE }
   if (existsSync(statePath)) {
     try {
       const content = readFileSync(statePath, "utf-8")
       current = { ...DEFAULT_STATE, ...JSON.parse(content) }
-    } catch (err) {
-      console.warn(`Failed to parse state file at ${statePath}:`, err)
+    } catch (e) {
+      console.warn(`[project-state] failed to read state.json, starting fresh: ${e}`)
     }
   }
+
+  // Merge update
   const next = { ...current, ...partial }
-  writeFileSync(statePath, JSON.stringify(next, null, 2))
+
+  // Write to temp file
+  writeFileSync(tmpPath, JSON.stringify(next, null, 2))
+
+  // Atomic rename (POSIX)
+  try {
+    renameSync(tmpPath, statePath)
+  } catch (e) {
+    try { unlinkSync(tmpPath) } catch (cleanupErr) { console.warn(`[project-state] failed to clean up temp file: ${cleanupErr}`) }
+    throw new Error(`[project-state] failed to update state: ${e}`)
+  }
 }

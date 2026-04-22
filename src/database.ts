@@ -55,6 +55,25 @@ export interface SearchOptions {
   limit?: number
 }
 
+function safeParseAttributes(json: string | null): Record<string, any> {
+  if (!json) return {}
+  try {
+    const parsed = JSON.parse(json)
+    if (parsed !== null && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      return parsed
+    }
+    console.warn(`[database] attributes JSON is not an object: ${json.slice(0, 50)}`)
+    return {}
+  } catch (e) {
+    console.warn(
+      `[database] malformed attributes JSON (${json.slice(0, 50)}...): ${
+        e instanceof Error ? e.message : String(e)
+      }`
+    )
+    return {}
+  }
+}
+
 function mapRow(r: RawIndexedItemRow): IndexedItem {
   return {
     id: r.id,
@@ -62,7 +81,7 @@ function mapRow(r: RawIndexedItemRow): IndexedItem {
     name: r.name,
     parentName: r.parent_name,
     module: r.module,
-    attributes: r.attributes ? JSON.parse(r.attributes) : {},
+    attributes: safeParseAttributes(r.attributes),
     dependencyDepth: r.dependency_depth,
   }
 }
@@ -194,7 +213,13 @@ export class DoodbaIndexDatabase {
       params.push(opts.module)
     }
     const where = conditions.length ? `WHERE ${conditions.join(" AND ")}` : ""
-    const limit = opts.limit ?? DEFAULT_SEARCH_LIMIT
+    const rawLimit = opts.limit ?? DEFAULT_SEARCH_LIMIT
+    const limit = typeof rawLimit === 'number' && Number.isFinite(rawLimit)
+      ? Math.max(1, Math.min(Math.floor(rawLimit), 1000))
+      : DEFAULT_SEARCH_LIMIT
+    if (typeof rawLimit !== 'number' || !Number.isFinite(rawLimit) || rawLimit !== limit) {
+      console.warn(`[database] LIMIT clamped from ${rawLimit} to ${limit}`)
+    }
     const query = `SELECT ${INDEXED_ITEM_COLUMNS} FROM indexed_items ${where} LIMIT ${limit}`
     const rows = this.db.query<RawIndexedItemRow, any[]>(query).all(...params)
     return rows.map(mapRow)

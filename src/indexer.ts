@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto"
-import { readdirSync, readFileSync } from "node:fs"
+import { readdirSync, readFileSync, realpathSync, statSync } from "node:fs"
 import { extname, join } from "node:path"
 import { DoodbaIndexDatabase } from "./database"
 import { discoverModules, findCycles, resolveDependencyOrder } from "./dependency-tree"
@@ -78,20 +78,42 @@ function fileHash(filePath: string): string {
   }
 }
 
-function walkDir(dir: string, exts: string[]): string[] {
+function walkDir(dir: string, exts: string[], visited = new Set<number>()): string[] {
   const results: string[] = []
+
+  // Get real path and inode
+  let realDir: string
+  let inode: number
   try {
-    for (const entry of readdirSync(dir, { withFileTypes: true })) {
-      const full = join(dir, entry.name)
-      if (entry.isDirectory() && !entry.name.startsWith(".")) {
-        results.push(...walkDir(full, exts))
-      } else if (entry.isFile() && exts.includes(extname(entry.name))) {
+    realDir = realpathSync(dir)
+    inode = statSync(realDir).ino
+  } catch (e) {
+    console.warn(`[walkDir] cannot stat ${dir}: ${e}`)
+    return results
+  }
+
+  // Check for cycle
+  if (visited.has(inode)) {
+    console.warn(`[walkDir] cycle detected at ${dir} (inode ${inode})`)
+    return results
+  }
+  visited.add(inode)
+
+  try {
+    const entries = readdirSync(realDir, { withFileTypes: true })
+    for (const entry of entries) {
+      const full = join(realDir, entry.name)
+      
+      if (entry.isDirectory() && !entry.isSymbolicLink() && !entry.name.startsWith(".")) {
+        results.push(...walkDir(full, exts, visited))
+      } else if (!entry.isDirectory() && exts.some(ext => full.endsWith(ext))) {
         results.push(full)
       }
     }
-  } catch (err) {
-    console.warn("[indexer] Skipped directory:", err)
+  } catch (e) {
+    console.warn(`[walkDir] failed to read ${realDir}: ${e}`)
   }
+
   return results
 }
 

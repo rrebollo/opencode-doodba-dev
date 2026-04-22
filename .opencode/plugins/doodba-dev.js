@@ -63,16 +63,96 @@ function loadMarkdownDir(dir, transform) {
   return result
 }
 
+/** Track spawned worker processes to prevent zombies and concurrent indexers. */
+const SPAWNED_WORKERS = new Map()
+
 /**
  * Spawn the indexer as a background child process via Bun.spawn.
- * Fire-and-forget: does not await completion.
+ * Tracks the worker to prevent zombies and pipe-buffer deadlocks.
  */
 function spawnIndexing(projectDir, doodbaRootPath, sourcePaths) {
+  // Kill any existing worker for this project to prevent concurrent indexing
+  const existing = SPAWNED_WORKERS.get(projectDir)
+  if (existing?.worker) {
+    try {
+      existing.worker.kill('SIGKILL')
+    } catch (e) {
+      // Already dead
+    }
+  }
+
   const workerPath = path.resolve(packageRoot, 'src/indexer-worker.ts')
-  Bun.spawn(
-    ['bun', workerPath, projectDir, doodbaRootPath, ...sourcePaths],
-    { stdout: 'pipe', stderr: 'pipe' }
-  )
+  
+  try {
+    const worker = Bun.spawn(
+      ['bun', workerPath, projectDir, doodbaRootPath, ...sourcePaths],
+      {
+        stdout: 'ignore',  // Prevent pipe-buffer deadlock
+        stderr: 'ignore'
+      }
+    )
+    
+    SPAWNED_WORKERS.set(projectDir, { worker, pid: worker.pid })
+    
+    // Clean up tracking when process exits (if onExit is available)
+    if (worker.onExit) {
+      worker.onExit.then(() => {
+        SPAWNED_WORKERS.delete(projectDir)
+      }).catch(() => {})
+    }
+  } catch (e) {
+    console.error(`[doodba-dev] Failed to spawn indexer: ${e.message}`)
+    // Update state so plugin knows indexing failed
+    const { updateState } = require(path.resolve(packageRoot, 'src/project-state.ts'))
+    updateState(doodbaRootPath, { 
+      status: 'FAILED', 
+      error: `Spawn failed: ${e.message}` 
+    })
+  }
+}
+
+/** Acquire a file-based lock to prevent concurrent indexers on the same project. */
+function acquireIndexLock(projectDir) {
+  const lockDir = path.join(projectDir, '.opencode', 'doodba-dev')
+  const lockPath = path.join(lockDir, 'indexer.lock')
+  
+  if (!fs.existsSync(lockDir)) {
+    fs.mkdirSync(lockDir, { recursive: true })
+  }
+  
+  const startTime = Date.now()
+  while (true) {
+    try {
+      const fd = fs.openSync(lockPath, fs.constants.O_CREAT | fs.constants.O_EXCL | fs.constants.O_WRONLY)
+      fs.writeSync(fd, JSON.stringify({ pid: process.pid, timestamp: Date.now() }))
+      fs.closeSync(fd)
+      return lockPath
+    } catch (e) {
+      if (Date.now() - startTime > 5000) {
+        throw new Error(`Indexer locked by another process`)
+      }
+      // Sleep 100ms using a busy-wait (synchronous)
+      const start = Date.now()
+      while (Date.now() - start < 100) {}
+    }
+  }
+}
+
+/** Release the file-based indexer lock. */
+function releaseIndexLock(lockPath) {
+  try { fs.unlinkSync(lockPath) } catch (e) {}
+}
+
+/** Clean up all tracked worker processes. */
+function cleanupWorkers() {
+  for (const { worker } of SPAWNED_WORKERS.values()) {
+    try {
+      if (worker && typeof worker.kill === 'function') {
+        worker.kill('SIGKILL')
+      }
+    } catch (e) {}
+  }
+  SPAWNED_WORKERS.clear()
 }
 
 /**
@@ -103,16 +183,25 @@ export const DoodbaDevPlugin = async ({ directory }) => {
     return { tool: doodbaTools }
   }
 
-  // Doodba project detected — trigger auto-indexing if needed
-  const state = readState(doodbaRoot)
-  if (state.status === 'INDEXING' && state.startedAt) {
-    const stuckMs = Date.now() - new Date(state.startedAt).getTime()
-    if (stuckMs > STUCK_INDEXER_TIMEOUT_MS) {
-      // Stuck > 30 min — restart
+  // Doodba project detected — trigger auto-indexing if needed (with lock)
+  let lockPath = null
+  try {
+    lockPath = acquireIndexLock(doodbaRoot)
+    
+    const state = readState(doodbaRoot)
+    if (state.status === 'INDEXING' && state.startedAt) {
+      const stuckMs = Date.now() - new Date(state.startedAt).getTime()
+      if (stuckMs > STUCK_INDEXER_TIMEOUT_MS) {
+        // Stuck > 30 min — restart
+        spawnIndexing(doodbaRoot, doodbaRoot, getSourcePaths(doodbaRoot))
+      }
+    } else if (state.status === 'NO_PROJECT' || state.status === 'FAILED') {
       spawnIndexing(doodbaRoot, doodbaRoot, getSourcePaths(doodbaRoot))
     }
-  } else if (state.status === 'NO_PROJECT' || state.status === 'FAILED') {
-    spawnIndexing(doodbaRoot, doodbaRoot, getSourcePaths(doodbaRoot))
+  } catch (e) {
+    console.error(`[doodba-dev] Failed to start indexing: ${e.message}`)
+  } finally {
+    if (lockPath) releaseIndexLock(lockPath)
   }
 
   // Load commands and agents from the plugin package for conditional injection
@@ -150,7 +239,7 @@ export const DoodbaDevPlugin = async ({ directory }) => {
   return {
     tool: doodbaTools,
 
-    config: async (config) => {
+    config: (config) => {
       // Inject skill discovery path
       config.skills = config.skills || {}
       config.skills.paths = config.skills.paths || []
