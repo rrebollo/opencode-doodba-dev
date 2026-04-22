@@ -1,7 +1,12 @@
 import { spawnSync } from "node:child_process"
 import { join, dirname } from "node:path"
 import { fileURLToPath } from "node:url"
-import type { PythonItem } from "./python-regex"
+import type { ParsedItem } from "./types"
+
+const PYTHON_BINARY = process.env.OPENCODE_PYTHON ?? "python3"
+const PYTHON_SUBPROCESS_TIMEOUT_MS = 10_000
+// Timeout rationale: Python AST extraction is typically < 1s for most files,
+// but we allow 10s to handle large modules with extensive class hierarchies
 
 const SCRIPT_PATH = join(
   dirname(fileURLToPath(import.meta.url)),
@@ -13,11 +18,11 @@ const SCRIPT_PATH = join(
  * Falls back to empty array if Python is unavailable or the script fails.
  * Fixes the class body boundary bug present in the regex parser.
  */
-export function parsePythonAst(filePath: string, module: string): PythonItem[] {
+export function parsePythonAst(filePath: string, module: string): ParsedItem[] {
   try {
-    const result = spawnSync("python3", [SCRIPT_PATH, filePath, module], {
+    const result = spawnSync(PYTHON_BINARY, [SCRIPT_PATH, filePath, module], {
       encoding: "utf-8",
-      timeout: 10_000,
+      timeout: PYTHON_SUBPROCESS_TIMEOUT_MS,
     })
     if (result.error || result.status !== 0) {
       if (result.stderr?.trim()) {
